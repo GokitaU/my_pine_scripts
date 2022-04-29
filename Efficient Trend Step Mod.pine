@@ -1,0 +1,99 @@
+//@version=4
+study("Efficient Trend Step Mod", overlay=false, precision=2)
+// original: alexgrover
+// modification: capissimo
+
+// This is my mod of a wonderful script by alexgrover.
+// See his comprehensive description of the logic behind the script 
+// at his page at https://www.tradingview.com/script/HxtiD091-Efficient-Trend-Step-Spotting-Trends-Efficiently/.
+// Added are labels, alerts and selection of periods among (mainly;)) fibo numbers.
+
+
+
+//*** Functions
+changed(x) => x!=x[1]
+
+//*** Inputs
+ds     = input(close, "Dataset")
+p      = input(8,    "Lookback Window", options=[1, 2, 3, 5, 8, 13, 15, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1440, 1597])
+fast   = input(3,     "Fast", options=[1, 2, 3, 5, 8, 13, 15, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1440, 1597])
+slow   = input(15,    "Slow", options=[1, 2, 3, 5, 8, 13, 15, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1440, 1597])
+labels = input(true,  "Show Labels?")
+ptype  = input('Close',  'Price Type',              options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+//-------------------- Logic
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+//*** Main
+er = abs(change(ds, p)) / sum(abs(change(ds)), p)
+dev = er * stdev(ds * 2, fast) + (1 - er) * stdev(ds * 2, slow)
+a = 0., a := bar_index < 9 ? ds : ds > a[1] + dev ? ds : ds < a[1] - dev ? ds : a[1]
+
+var color c = na, c := fixnan(a > a[1] ? color.lime : a < a[1] ? color.red : na)
+plot(a, color=c, linewidth=3, transp=0)
+
+long = changed(c) and c==color.lime
+short = changed(c) and c==color.red
+
+plotshape(labels and long  ? low : na, location=location.belowbar, style=shape.labelup, color=color.green, size=size.tiny, text="Buy", textcolor=color.white, transp=0)
+plotshape(labels and short ? high : na, location=location.abovebar, style=shape.labeldown, color=color.red, size=size.tiny, text="Sell", textcolor=color.white, transp=0)
+
+//alertcondition(long,  title='Buy',  message='go long')
+//alertcondition(short, title='Sell', message='go short') 
+//alertcondition(long or short, title='General Alert', message='Deal Time!')
+
+startLongTrade  = long
+startShortTrade = short
+endLongTrade    = short
+endShortTrade   = long
+
+//-------------------- Backtest
+
+show_info = input(false, '===Information===')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+
+bidask = -- (open+high+low)/3 
+//is a more restrained estimate
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  ptype
+      + '\nCR='        + tostring(cumreturn,             '#.#') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, HOLD, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])

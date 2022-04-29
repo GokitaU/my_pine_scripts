@@ -1,0 +1,164 @@
+//-------------------------------------------------------------------------------
+//@version=4
+
+strategy(title='_testing', commission_type=strategy.commission.percent, commission_value=0.003, 
+         default_qty_value=5000, default_qty_type=strategy.fixed, initial_capital=10000,  currency=currency.USD,  overlay=true, 
+         pyramiding=0, calc_on_order_fills=true, calc_on_every_tick=false, precision=8, max_labels_count=200, max_bars_back=5000)
+
+//-------------------------------------------------------------------------------         
+// STEP 1:
+// Make input options that configure backtest date range
+
+startDate = input(title="Start Date", type=input.integer,
+     defval=1, minval=1, maxval=31)
+startMonth = input(title="Start Month", type=input.integer,
+     defval=11, minval=1, maxval=12)
+startYear = input(title="Start Year", type=input.integer,
+     defval=2021, minval=2021, maxval=2022)
+
+endDate = input(title="End Date", type=input.integer,
+     defval=1, minval=1, maxval=31)
+endMonth = input(title="End Month", type=input.integer,
+     defval=2, minval=1, maxval=12)
+endYear = input(title="End Year", type=input.integer,
+     defval=2022, minval=2021, maxval=2023)
+     
+//-------------------------------------------------------------------------------
+// STEP 2:
+// Look if the close time of the current bar
+// falls inside the date range
+inDateRange = (time >= timestamp(syminfo.timezone, startYear,
+         startMonth, startDate, 0, 0)) and
+     (time < timestamp(syminfo.timezone, endYear, endMonth, endDate, 0, 0))
+
+//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------
+
+//  Coppock Curve Strategy
+
+//  Description:
+
+// 	The Coppock Indicator is a long-term price momentum oscillator 
+// 	which is used primarily to pinpoint major bottoms in the stock market.
+// 	Crosses above the zero line indicate buying pressure, crosses below the zero
+// 	line indicate selling pressure.
+
+// 	This script generates a long entry signal when the Coppock value crosses over 
+// 	a signal line, and/or generates a short entry signal when the value crosses
+// 	under a signal line.
+
+// 	Also it generates a long exit signal when the Coppock value crosses under
+// 	a signal line, and/or generates a short exit signal when the value crosses
+// 	over a signal line.
+
+//  Signals can be filtered out by volatility, volume or both. To minimize 
+//  repainting use higher percentage values of Time Threshold parameter.
+
+//-------------------- Inputs	
+
+ptype     = input('Close',     'Price Type',                    options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+shortlag  = input(1,          'Short Lag |1..n|',              minval=1)  // 14, 20
+longlag   = input(1,          'Long Lag |1..n|',               minval=1)  // 28, 40
+wmalag    = input(1,           'WMA Lag |1..n|',                minval=1)  // 8, 10
+method    = input('Center',   'Method',                        options=['Center','Trigger'])
+triglag   = input(1,           'Trigger Lag',                   minval=1)
+ftype     = input('Volume','Filtering by',                  options=['Volatility','Volume','Both','None'])
+tthres    = input(1,        'Time Threshold (%) |0.0..1.0|', minval=0.0, maxval=1.0, step=0.01)
+holding_p = input(5,           'Holding Period |1..n|',         minval=1)
+
+//-------------------- System Variables
+
+var int BUY  =  1
+var int SELL = -1
+var int HOLD =  0
+
+//-------------------- Series
+
+var bool  long    = na
+var bool  short   = na
+var int   signal  = HOLD
+var float trigger = 0.0
+var float copzz   = ohlc4
+var int   hp_counter = 0
+
+//-------------------- Custom Functions	
+
+coppock(ds, lag, short, long) => s = roc(ds, short), l = roc(ds, long), wma(s + l, lag)
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 10)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+base =  ptype=='Open'  ? open 
+      : ptype=='High'  ? high
+      : ptype=='Low'   ? low
+      : ptype=='Close' ? close
+      : ptype=='OC2'   ? (open+close)/2 
+      : ptype=='HL2'   ? hl2 
+      : ptype=='OHL3'  ? (open+high+low)/3 
+      : ptype=='HLC3'  ? hlc3 
+      :                  ohlc4
+
+filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
+         : ftype=='Volume'     ? volumeBreak(40) 
+         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
+         :                       true
+
+//-- Core
+cop = coppock(base, wmalag, shortlag, longlag)
+
+if method=='Center'
+	long    := crossover(cop,  HOLD) 
+	short   := crossunder(cop, HOLD) 
+if method=='Trigger'
+    trigger := sma(cop, triglag)
+    long  := crossover(cop,  trigger) 
+    short := crossunder(cop, trigger) 
+
+signal := long and filter ? BUY : short and filter ? SELL : nz(signal[1])
+copzz  := long and filter ? low : short and filter ? high : nz(copzz[1])
+
+changed = change(signal)
+hp_counter := changed ? 0 : hp_counter + 1
+//--
+
+startLongTrade  = barlife > tthres and changed and signal==BUY    
+startShortTrade = barlife > tthres and changed and signal==SELL   
+endLongTrade    = (changed and signal==SELL) or (signal==BUY  and hp_counter==holding_p and not changed) 
+endShortTrade   = (changed and signal==BUY)  or (signal==SELL and hp_counter==holding_p and not changed) 
+
+//-------------------- Visualization	
+
+plot(copzz, "C-Curve", cop > cop[1] ? color.blue : color.red, 2, transp=0)
+
+plotshape(startLongTrade  ? copzz : na, 'Buy',  shape.labelup,   location.absolute, color.blue, text='c', size=size.tiny) 
+plotshape(startShortTrade ? copzz : na, 'Sell', shape.labeldown, location.absolute, color.red,  text='c', size=size.tiny) 
+plot(endLongTrade         ? close   : na, 'StopBuy',  color.blue, 2, plot.style_cross)
+plot(endShortTrade        ? close   : na, 'StopSell', color.red,  2, plot.style_cross)
+
+//-------------------------------------------------------------------------------
+
+//-------------------------------------------------------------------------------
+// STEP 3:
+// Submit entry orders, but only when bar is inside date range
+
+strategy.entry(id="Enter Long", long=true, when=(startLongTrade and endShortTrade and inDateRange))
+strategy.close(id="Exit Long", when=(endLongTrade and startShortTrade and inDateRange))
+strategy.entry(id="Enter Short", long=false, when=(startShortTrade and endLongTrade and inDateRange))
+strategy.close(id="Exit Short", when=(startLongTrade and endShortTrade and inDateRange))
+
+//-------------------------------------------------------------------------------
+// STEP 4:
+// Exit open market position when date range ends
+if (not inDateRange)
+    strategy.close_all()
+    

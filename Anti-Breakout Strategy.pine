@@ -1,0 +1,153 @@
+//-------------------------------------------------------------------------------
+//@version=4
+
+strategy(title='_testing', commission_type=strategy.commission.percent, commission_value=0.003, 
+         default_qty_value=5000, default_qty_type=strategy.fixed, initial_capital=10000,  currency=currency.USD,  overlay=true, 
+         pyramiding=0, calc_on_order_fills=true, calc_on_every_tick=false, precision=8, max_labels_count=200, max_bars_back=5000)
+
+//-------------------------------------------------------------------------------         
+// STEP 1:
+// Make input options that configure backtest date range
+
+startDate = input(title="Start Date", type=input.integer,
+     defval=1, minval=1, maxval=31)
+startMonth = input(title="Start Month", type=input.integer,
+     defval=11, minval=1, maxval=12)
+startYear = input(title="Start Year", type=input.integer,
+     defval=2021, minval=2021, maxval=2022)
+
+endDate = input(title="End Date", type=input.integer,
+     defval=1, minval=1, maxval=31)
+endMonth = input(title="End Month", type=input.integer,
+     defval=2, minval=1, maxval=12)
+endYear = input(title="End Year", type=input.integer,
+     defval=2022, minval=2021, maxval=2023)
+     
+//-------------------------------------------------------------------------------
+// STEP 2:
+// Look if the close time of the current bar
+// falls inside the date range
+inDateRange = (time >= timestamp(syminfo.timezone, startYear,
+         startMonth, startDate, 0, 0)) and
+     (time < timestamp(syminfo.timezone, endYear, endMonth, endDate, 0, 0))
+
+//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------
+
+// Anti-Breakout Strategy
+
+// Description:
+
+// This is a contrarian entry strategy for trading false breakouts. 
+// The high/low of the breakout bar is used for the entry in the 
+// opposite direction.
+
+// To reduce repainting set ptype variable to OHL3.
+
+//-------------------- Inputs
+
+ptype     = input('Close',     'Price Type',                   options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+lag       = input(3,           'Lag |1..n|',                   minval=1)
+tthres    = input(1,           'Time Threshold (%) |0..100|',  minval=0, maxval=100) / 100
+ftype     = input('Volume',    'Filter Signals by',            options=['Volatility','Volume','Both','None'])
+minvol    = input(1,           'Min ATR Lag |1..n|',           minval=1)
+maxvol    = input(2,           'Max ATR Lag |1..n|',           minval=1)
+volbr     = input(49,          'Volume Level|1..n|',           minval=1)  // 49, 55
+holding_p = input(1,           'Holding Period |1..n|',        minval=1)
+draw      = input(true,        'Draw Channel?')
+
+//-------------------- System Variables
+
+var int BUY   = -1
+var int SELL  =  1
+var int HOLD  =  0
+
+//-------------------- Helper Series
+
+var float hHigh      = 0.0
+var float lLow       = 0.0
+var int   signal     = HOLD
+var int   hp_counter = 0     //-- holding period counter
+
+//-------------------- Custom Functions
+
+volumeBreak(thres) => hma(rsi(volume, 14), 10) > thres
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+float tbase   = (time - time[1]) / 1000
+float tcurr   = (timenow - time_close[1]) / 1000
+float barlife = tcurr / tbase
+
+float ds      =  ptype=='Open'  ? open 
+               : ptype=='High'  ? high 
+               : ptype=='Low'   ? low 
+               : ptype=='Close' ? close 
+               : ptype=='OC2'   ? (open+close)/2 
+               : ptype=='HL2'   ? hl2 
+               : ptype=='OHL3'  ? (open+high+low)/3 
+               : ptype=='HLC3'  ? hlc3 
+               :                  ohlc4
+           
+bool filter   =  ftype=='Volatility' ? volatilityBreak(minvol, maxvol) 
+               : ftype=='Volume'     ? volumeBreak(volbr) 
+               : ftype=='Both'       ? volatilityBreak(minvol, maxvol) and volumeBreak(volbr)
+               :                       true
+
+//== Core
+hHigh := highest(high[1], lag)
+lLow  := lowest(low[1], lag)
+
+bool long  = crossover(ds, hHigh)
+bool short = crossunder(ds, lLow)
+//==
+
+signal := long and filter ? BUY : short and filter ? SELL : nz(signal[1])
+
+bool changed = change(signal)
+hp_counter := changed ? 0 : hp_counter + 1
+
+bool startLongTrade  = barlife > tthres and changed and signal==BUY    
+bool startShortTrade = barlife > tthres and changed and signal==SELL   
+bool endLongTrade    = ((not changed) and signal==BUY  and hp_counter==holding_p) or (changed and signal==SELL)  
+bool endShortTrade   = ((not changed) and signal==SELL and hp_counter==holding_p) or (changed and signal==BUY)
+
+//-------------------- Visualization
+
+plot(draw ? hHigh : na, '', color.silver, 2)
+plot(draw ? lLow  : na, '', color.silver, 2)
+
+plotshape(startLongTrade  ? close   : na, 'Buy',  shape.labelup,   location.belowbar, color.blue, 30, size=size.small)
+plotshape(startShortTrade ? close  : na, 'Sell', shape.labeldown, location.abovebar, color.red,  30, size=size.small)
+plot(endLongTrade         ? ohlc4 : na, '', color.blue, 1, plot.style_cross)
+plot(endShortTrade        ? ohlc4 : na, '', color.red,  1, plot.style_cross)
+
+//==================== Doji Module
+
+var string stop = '✖'
+
+bool doji = (abs(open - close) <= (high - low) * input(0.15, "Doji Size", minval=0.01, step=.01))
+
+plotchar((open-close)<0 ? doji : na, '', stop, location.abovebar, color.black) 
+plotchar((open-close)>0 ? doji : na, '', stop, location.belowbar, color.black) 
+
+
+//-------------------------------------------------------------------------------
+
+//-------------------------------------------------------------------------------
+// STEP 3:
+// Submit entry orders, but only when bar is inside date range
+
+strategy.entry(id="Enter Long", long=true, when=(startLongTrade and endShortTrade and inDateRange))
+strategy.close(id="Exit Long", when=(endLongTrade and startShortTrade and inDateRange))
+strategy.entry(id="Enter Short", long=false, when=(startShortTrade and endLongTrade and inDateRange))
+strategy.close(id="Exit Short", when=(startLongTrade and endShortTrade and inDateRange))
+
+//-------------------------------------------------------------------------------
+// STEP 4:
+// Exit open market position when date range ends
+if (not inDateRange)
+    strategy.close_all()
+    
