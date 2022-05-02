@@ -1,0 +1,54 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © PlayTheTrade
+//
+// This indicator is based on the article Detecting High-Volume Breakouts written 
+// by Markos Katsanos, published in Technical Analysis of Stocks & Commodities
+// April, 2021 (Vol. 39, Issue 5).
+
+//@version=4
+study("Volume Positive Negative (VPN)", shorttitle = "VPN")
+
+//-----------------------------------------------------------
+// User configurable values
+//-----------------------------------------------------------
+iPeriod = input(title = "Period length", type = input.integer, defval = 30, minval = 10, maxval = 50)
+iSignalLine = input(title = "Signal line", type = input.integer, defval = 10, minval = 0, maxval = 20)
+iLineWidth = input(title = "Width of signal line", type = input.integer, defval = 1, minval = 1, maxval = 4)
+iATR = input(title = "Fraction of ATR (default .1)", type = input.float, defval = .1, minval = .0, maxval = .9, step = .1)
+
+iMAVisible = input(title="", type = input.bool, defval = true, inline = "MA", group = "Moving Average")
+iMALength = input(title="", type = input.integer, minval = 1, maxval = 200, defval = 30, inline = "MA", group = "Moving Average")
+iMAType = input(title="", type = input.string, options = ["SMA", "EMA"], defval = "SMA", inline = "MA", group = "Moving Average")
+iMAColor = input(title="", type = input.color, defval = color.new(#59616E, transp = 44), inline = "MA", group = "Moving Average")
+
+//---------------------------------------------------------------------
+// Signal line
+//---------------------------------------------------------------------
+hline(iSignalLine, color = color.gray, linestyle = hline.style_dotted, editable = false)
+
+//---------------------------------------------------------------------
+// Calculate VPN based on the period
+//---------------------------------------------------------------------
+f_VPN(_period) => 
+    dist = atr(_period) * iATR
+    vp = 0.0, vn = 0.0, vtot = 0.0
+    for i = 0 to _period - 1
+        if (hlc3[i] > (hlc3[i + 1] + dist))
+            vp += volume[i]
+        else if (hlc3[i] < (hlc3[i + 1] - dist))
+            vn += volume[i]
+        vtot += volume[i]
+    (((vp - vn) / (vtot / _period)) / _period) * 100
+
+//---------------------------------------------------------------------
+// Use ema over 3 periods for smoothing
+//---------------------------------------------------------------------
+vpn = ema(f_VPN(iPeriod), 3)
+lColor = vpn > iSignalLine ? color.green : color.red
+plot(vpn, linewidth = iLineWidth, color = lColor, editable = false)
+
+//---------------------------------------------------------------------
+// Moving average
+//---------------------------------------------------------------------
+movingAverage = iMAType == "SMA" ? sma(vpn, iMALength) : ema(vpn, iMALength)
+plot(iMAVisible ? movingAverage : na, color = iMAColor, linewidth = 1, editable = false)
