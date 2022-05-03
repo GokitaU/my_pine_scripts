@@ -3,21 +3,22 @@
 //@version=5
 //This strategy can be used for daily entry for positional trading
 strategy('CCI & EMA strategy by Tradeswithashish', shorttitle='CC-EMA by tradeswithashish', overlay=true, default_qty_value=100, default_qty_type=strategy.percent_of_equity, initial_capital=1000)
-emalen = input.int(title='Smooth EMA length', defval=100, minval=50, maxval=200, step=10)
+emalen = input.int(title='EMA long length', defval=200, minval=50, maxval=200, step=10)
+emalen2 = input.int(title='EMA short length', defval=50, minval=10, maxval=100, step=10)
 Return = input.float(title='Return (%)', defval=15, minval=5, maxval=100, step=5)
 Risk = input.float(title='Risk (%)', defval=5, minval=1, maxval=10, step=1)
 ema = ta.ema(close, emalen)
 emasmooth = ta.ema(ema, emalen)
-ema2 = ta.ema(close, 50)
-emasmooth2 = ta.ema(ema2, 50)
+ema2 = ta.ema(close, emalen2)
+emasmooth2 = ta.ema(ema, emalen2)
 volMA = ta.sma(volume, 20)
 volcheck = volume > volMA
 
 //fidning CCI-100 and CCI-20 values value
-ma1 = ta.sma(hlc3, 100)
-cci100 = (hlc3 - ma1) / (0.015 * ta.dev(hlc3, 100))
-ma2 = ta.sma(hlc3, 20)
-cci20 = (hlc3 - ma2) / (0.015 * ta.dev(hlc3, 20))
+ma1 = ta.sma(close, 100)
+cci100 = (close - ma1) / (0.015 * ta.dev(close, 100))
+ma2 = ta.sma(close, 20)
+cci20 = (close - ma2) / (0.015 * ta.dev(close, 20))
 
 //conditions for short and long entries
 BuyCond = close > emasmooth and close > open and volcheck and cci100 > 0 and cci20 > 100 and close > ta.vwap
@@ -32,8 +33,8 @@ sllong = math.max(ema2, emasmooth)
 slshort = math.min(ema2, emasmooth)
 
 //Setting up Targets
-longtarget = ohlc4 * (1 + Return / 100)
-shorttarget = ohlc4 * (1 - Return / 100)
+longtarget = close * (1 + Return / 100)
+shorttarget = close * (1 - Return / 100)
 
 //Save SLs and Target prices
 var StopPrice = 0.0
@@ -44,7 +45,7 @@ var EntryPrice = 0.0
 //Detect Valid long setup and trigger alerts
 if Buysignal
     StopPrice := sllong
-    EntryPrice := ohlc4
+    EntryPrice := close
     TargetPrice := longtarget
     TargetPrice
 
@@ -52,7 +53,7 @@ if Buysignal
 if Sellsignal
     StopPrice := slshort
     TargetPrice := shorttarget
-    EntryPrice := ohlc4
+    EntryPrice := close
     EntryPrice
 
 

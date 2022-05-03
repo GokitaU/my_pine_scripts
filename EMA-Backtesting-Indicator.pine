@@ -138,8 +138,8 @@ plotshape(sellAlert, title='Sell', location=location.abovebar , color=color.new(
 //                        Remove // on alertCondition to enable Alerts                     //
 /////////////////////////////////////////////////////////////////////////////////////////////
 //Alerts
-//alertcondition(title='Buy Alert', condition=buyAlert, message='Buy Conditions are Met')
-//alertcondition(title='Sell Alert', condition=sellAlert, message='Sell Conditions are Met')
+alertcondition(title='Buy Alert', condition=buyAlert, message='Buy Conditions are Met')
+alertcondition(title='Sell Alert', condition=sellAlert, message='Sell Conditions are Met')
 /////////////////////////////////////////////////////////////////////////////////////////////
 
 
