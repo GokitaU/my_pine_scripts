@@ -1,0 +1,67 @@
+//@version=4
+// Copyright (c) 2018-present, Alex Orekhov (everget)
+// Schaff Trend Cycle script may be freely distributed under the MIT license.
+strategy("Schaff Trend Cycle", shorttitle="STC Backtest", overlay=false)
+
+fastLength = input(title="MACD Fast Length", type=input.integer, defval=13)
+slowLength = input(title="MACD Slow Length", type=input.integer, defval=49)
+cycleLength = input(title="Cycle Length", type=input.integer, defval=9)
+d1Length = input(title="1st %D Length", type=input.integer, defval=3)
+d2Length = input(title="2nd %D Length", type=input.integer, defval=3)
+src = input(title="Source", type=input.source, defval=close)
+highlightBreakouts = input(title="Highlight Breakouts ?", type=input.bool, defval=true)
+
+macd = ema(src, fastLength) - ema(src, slowLength)
+
+k = nz(fixnan(stoch(macd, macd, macd, cycleLength)))
+
+d = ema(k, d1Length)
+
+kd = nz(fixnan(stoch(d, d, d, cycleLength)))
+
+stc = ema(kd, d2Length)
+stc := stc > 100 ? 100 : stc < 0 ? 0 : stc
+
+stcColor = not highlightBreakouts ? stc > stc[1] ? color.green : color.red : #ff3013
+stcPlot = plot(stc, title="STC", color=stcColor, transp=0)
+
+upper = input(75, defval=75)
+lower = input(25, defval=25)
+
+transparent = color.new(color.white, 100)
+
+upperLevel = plot(upper, title="Upper", color=color.gray)
+hline(50, title="Middle", linestyle=hline.style_dotted)
+lowerLevel = plot(lower, title="Lower", color=color.gray)
+
+fill(upperLevel, lowerLevel, color=#f9cb9c, transp=90)
+
+upperFillColor = stc > upper and highlightBreakouts ? color.green : transparent
+lowerFillColor = stc < lower and highlightBreakouts ? color.red : transparent
+
+fill(upperLevel, stcPlot, color=upperFillColor, transp=80)
+fill(lowerLevel, stcPlot, color=lowerFillColor, transp=80)
+
+long = crossover(stc, lower) ? lower : na
+short = crossunder(stc, upper) ? upper : na
+
+long_filt = long and not short
+short_filt = short and not long
+
+prev = 0
+prev := long_filt ? 1 : short_filt ? -1 : prev[1]
+
+long_final = long_filt and prev[1] == -1
+short_final = short_filt and prev[1] == 1
+
+strategy.entry("long", strategy.long, when=long)
+strategy.entry("short", strategy.short, when=short)
+
+plotshape(crossover(stc, lower) ? lower : na, title="Crossover", location=location.absolute, style=shape.circle, size=size.tiny, color=color.green, transp=0)
+plotshape(crossunder(stc, upper) ? upper : na, title="Crossunder", location=location.absolute, style=shape.circle, size=size.tiny, color=color.red, transp=0)
+
+alertcondition(long_final, "Long", message="Long")
+alertcondition(short_final, "Short", message="Short")
+
+plotshape(long_final, style=shape.arrowup, text="Long", color=color.green, location=location.belowbar)
+plotshape(short_final, style=shape.arrowdown, text="Short", color=color.red, location=location.abovebar)
