@@ -1,0 +1,70 @@
+//@version=5
+// Copyright (c) 2018-present, Alex Orekhov (everget)
+// Schaff Trend Cycle script may be freely distributed under the MIT license.
+
+//strategy(title='Schaff Trend Cycle', commission_type=strategy.commission.percent, commission_value=0.003, 
+//         initial_capital=3000, overlay=false, default_qty_type=strategy.percent_of_equity, 
+//         default_qty_value=90, currency=currency.EUR, pyramiding=0, calc_on_every_tick=true, 
+//         precision=8, max_labels_count=200, max_bars_back=1000)
+
+indicator(title="Schaff Trend Cycle Indicator", overlay=true)
+
+// STC init
+fastLength = input(title='MACD Fast Length', defval=10)
+slowLength = input(title='MACD Slow Length', defval=25)
+cycleLength = input(title='Cycle Length', defval=6)
+d1Length = input(title='1st %D Length', defval=3)
+d2Length = input(title='2nd %D Length', defval=6)
+src = input(title='Source', defval=close)
+
+highlightBreakouts = input(title='Highlight Breakouts ?', defval=true)
+macd = ta.ema(src, fastLength) - ta.ema(src, slowLength)
+
+k = nz(fixnan(ta.stoch(macd, macd, macd, cycleLength)))
+d = ta.ema(k, d1Length)
+kd = nz(fixnan(ta.stoch(d, d, d, cycleLength)))
+stc = ta.ema(kd, d2Length)
+stc := stc > 100 ? 100 : stc < 0 ? 0 : stc
+
+stcColor = not highlightBreakouts ? stc > stc[1] ? color.green : color.red : #ff3013
+stcPlot = plot(stc, title='STC', color=stcColor, transp=0)
+
+upper = input(90, defval=90)
+lower = input(10, defval=10)
+
+transparent = color.new(color.white, 100)
+
+upperLevel = plot(upper, title='Upper', color=color.new(color.lime, 0))
+hline(50, title='Middle', linestyle=hline.style_dotted)
+lowerLevel = plot(lower, title='Lower', color=color.new(color.yellow, 0))
+
+fill(upperLevel, lowerLevel, color=color.new(#f9cb9c, 90))
+
+upperFillColor = stc > upper and highlightBreakouts ? color.green : transparent
+lowerFillColor = stc < lower and highlightBreakouts ? color.red : transparent
+
+fill(upperLevel, stcPlot, color=upperFillColor, transp=80)
+fill(lowerLevel, stcPlot, color=lowerFillColor, transp=80)
+
+long = ta.crossover(stc, lower) ? lower : na
+short = ta.crossunder(stc, upper) ? upper : na
+
+long_filt = long and not short
+short_filt = short and not long
+
+prev = 0
+prev := long_filt ? 1 : short_filt ? -1 : prev[1]
+
+buySignal = long_filt and prev[1] == -1
+sellSignal = short_filt and prev[1] == 1
+
+plotshape(ta.crossover(stc, lower) ? lower : na, title='Crossover', location=location.absolute, style=shape.circle, size=size.tiny, color=color.new(color.green, 0))
+plotshape(ta.crossunder(stc, upper) ? upper : na, title='Crossunder', location=location.absolute, style=shape.circle, size=size.tiny, color=color.new(color.red, 0))
+plotshape(buySignal, style=shape.arrowup, text='Long', color=color.new(color.green, 0), location=location.belowbar)
+plotshape(sellSignal, style=shape.arrowdown, text='Short', color=color.new(color.red, 0), location=location.belowbar)
+
+
+alertcondition(buySignal, title="Alert: Long", message="STC: Long!\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")
+alertcondition(sellSignal, title="Alert: Short", message="STC: Short!\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")/////////////////////////////////////////////////////////////
+
+

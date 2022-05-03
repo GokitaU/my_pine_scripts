@@ -1,0 +1,227 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Thumpyr
+//@version=5
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+// Comment out Strategy Line and remove // from Indicator line to turn into Indicator  //////
+// Do same for alertConidction at bottom                                               //////
+/////////////////////////////////////////////////////////////////////////////////////////////
+strategy("Backtesting-Strategy", shorttitle="Backtesting- Strategy", overlay=true, 
+          margin_short=100, initial_capital=3000, default_qty_type=strategy.percent_of_equity,
+          calc_on_order_fills=true, calc_on_every_tick=false, precision=8, margin_long=100,
+          default_qty_value=90, commission_type=strategy.commission.percent, commission_value=.075)
+//indicator(title="Backtesting- Indicator", shorttitle="Backtesting - Indicator", overlay=true)//
+
+
+openBalance  =input.float(3000, minval=0, title="Opening Balance:", group="Back Test")
+pctAllocated =input.float(.9, minval=0, title="Allocated % (90% = .9):", group="Back Test")
+commission   =input.float(.075, minval=0, title="Commission%", group="Back Test")
+
+
+sellLow=input.float(.035, minval=0, title="Stop Loss Loss: 1% = .01", group="Sell Settings")
+trailStopArm=input.float(.0065, minval=0, title="Trailing Stop Arm: 1%=.01", group="Sell Settings")
+trailStopPct=input.float(.003, minval=0, title="Trailing Stop Trigger: 1%=.01 ", group="Sell Settings")
+
+/////////////////////////////////////////////////
+//               Indicators                    //
+/////////////////////////////////////////////////
+ema1Len = input.int(14, minval=1, title=" ema 1 Length", group="Trend Line Settings")
+ema1Src = input(close, title="ema 1 Source", group="Trend Line Settings")
+ema1 = ta.ema(ema1Src, ema1Len)
+plot(ema1, title="EMA", color=color.blue)
+
+ema2Len = input.int(22, minval=1, title=" ema 2 Length", group="Trend Line Settings")
+ema2Src = input(close, title="ema 2 Source", group="Trend Line Settings")
+ema2 = ta.ema(ema2Src, ema2Len)
+plot(ema2, title="EMA", color=color.orange)
+
+ema3Len = input.int(200, minval=1, title=" ema 3 Length", group="Trend Line Settings")
+ema3Src = input(close, title="ema 2 Source", group="Trend Line Settings")
+ema3 = ta.ema(ema3Src, ema3Len)
+plot(ema3, title="EMA", color=color.white)
+
+
+/////////////////////////////
+////   Buy Conditions    ////
+/////////////////////////////
+
+alertBuy = ta.crossover(ema1,ema2) and close>ema3
+
+////////////////////////////////////////////////////////////////////
+////   Filter redundant Buy Signals if Sell has not happened    ////
+////////////////////////////////////////////////////////////////////
+var lastsignal = 0
+showAlertBuy   = 0
+if(alertBuy and lastsignal != 1)
+    showAlertBuy           := 1
+    lastsignal             := 1
+buyAlert= showAlertBuy     > 0
+
+var buyActive = 0
+if  buyAlert
+    buyActive :=1
+
+//////////////////////////////////////////////////////////////////
+////          Track Conditions at buy Signal                  ////
+//////////////////////////////////////////////////////////////////
+
+alertBuyValue = ta.valuewhen(buyAlert, close,0)
+alertSellValueLow = alertBuyValue - (alertBuyValue*sellLow)
+
+////////////////////////////////////////////////////////////
+/////            Trailing Stop                         /////
+////////////////////////////////////////////////////////////
+var TSLActive       = 0         //Check to see if TSL has been activated
+var TSLTriggerValue = 0.0 //Initial and climbing value of TSL
+var TSLStop         = 0.0       //Sell Trigger
+var TSLRunning      = 0       //Continuously check each bar to raise TSL or not
+
+//  Check if a Buy has been triggered and set initial value for TSL //
+if buyAlert
+    TSLTriggerValue := alertBuyValue+(alertBuyValue*trailStopArm)
+    TSLActive  := 0
+    TSLRunning := 1
+    TSLStop := TSLTriggerValue - (TSLTriggerValue*trailStopPct)
+    
+
+//  Check that Buy has triggered and if Close has reached initial TSL//  
+//  Keeps from setting Sell Signal before TSL has been armed w/TSLActive//
+beginTrail=TSLRunning==1 and TSLActive==0 and close>alertBuyValue+(alertBuyValue*trailStopArm) and ta.crossover(close,TSLTriggerValue)
+if beginTrail
+    TSLTriggerValue :=close
+    TSLActive :=1
+    TSLStop :=TSLTriggerValue - (TSLTriggerValue*trailStopPct)
+    
+//  Continuously check if TSL needs to increase and set new value //    
+runTrail= TSLActive==1 and (ta.crossover(close,TSLTriggerValue) or close>=TSLTriggerValue)
+if runTrail
+    TSLTriggerValue :=close
+    TSLStop :=TSLTriggerValue - (TSLTriggerValue*trailStopPct)
+    
+//  Verify that TSL is active and trigger when close cross below TSL Stop//
+TSL=TSLActive==1 and (ta.crossunder(close,TSLStop) or (close[1]>TSLStop and close<TSLStop)) 
+
+// Plot point of inital arming of TSL//
+TSLTrigger=TSLActive==1 and TSLActive[1]==0
+plotshape(TSLTrigger, title='TSL Armed', location=location.abovebar, color=color.new(color.blue, 0), size=size.small, style=shape.cross, text='TSL Armed')
+
+
+////////////////////////////////////////////////////////////
+/////             Sell Conditions                    ///////
+////////////////////////////////////////////////////////////
+Sell1 = TSL
+Sell2 = ta.crossunder(close,alertSellValueLow)
+
+alertSell = Sell1 or Sell2
+////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////
+////        Remove Redundant Signals                    ////
+////////////////////////////////////////////////////////////
+showAlertSell = 0
+if(alertSell and lastsignal != -1)
+    showAlertSell           := 1
+    lastsignal              := -1
+sellAlert= showAlertSell    > 0
+
+if sellAlert
+    TSLActive  :=0
+    TSLRunning :=0
+    buyActive  :=0
+/////////////////////////////////////////
+//  Plot Buy and Sell Shapes on Chart  //
+/////////////////////////////////////////
+plotshape(buyAlert,  title='Buy' , location=location.belowbar , color=color.new(color.green, 0), size=size.small , style=shape.triangleup   , text='Buy')
+plotshape(sellAlert, title='Sell', location=location.abovebar , color=color.new(color.red, 0)  , size=size.small , style=shape.triangledown , text='Sell')
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+//                        Remove // on alertCondition to enable Alerts                     //
+/////////////////////////////////////////////////////////////////////////////////////////////
+//Alerts
+//alertcondition(title='Buy Alert', condition=buyAlert, message='Buy Conditions are Met')
+//alertcondition(title='Sell Alert', condition=sellAlert, message='Sell Conditions are Met')
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+
+////////////////////////////////////////////////////////////
+////  Comment out this section if setup as Indicator    ////
+////////////////////////////////////////////////////////////
+longCondition = buyAlert
+if (longCondition)
+    strategy.entry("Buy", strategy.long)
+    alert(message='Buy', freq=alert.freq_once_per_bar_close)
+    
+shortCondition = sellAlert
+if (shortCondition)
+    strategy.close_all(sellAlert,"Sell")
+    alert(message='Sell', freq=alert.freq_once_per_bar_close)
+/////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////                                         BackTesting                                                                  ////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Table for Backtesting results.  This is mostly Self-Contained.  There are 2 variables above this area you will need      //
+// AlertBuyValue and buyActive are above in the remove Redundant Signals Section and Track Conditions at Buy Signal section //
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+show_table = input.bool(true, title="Show table")    
+sellValue  = ta.valuewhen(sellAlert,close,0)
+currentPrice=close
+var buyAlertCount       = 0
+var sellAlertCount      = 0
+var goodTradeCount      = 0
+var runningBalance      = openBalance
+var sharePurchaseAmt    = 0.0
+var actualPurchasePower = 0.0
+var buyCommission       = 0.0
+var sharesPurchased     = 0.0
+var gross               = 0.0
+var net                 = 0.0
+var sellCommission      = 0.0
+var totalCommission     = 0.0
+var tradeProfit         = 0.0
+var gain                = 0.0
+var closingBalance      = 0.0
+var profitLoss          = 0.0
+if buyAlert
+    sharePurchaseAmt    := runningBalance * pctAllocated
+    buyCommission       := (sharePurchaseAmt / 100) * commission
+    actualPurchasePower := sharePurchaseAmt - buyCommission
+    sharesPurchased     := actualPurchasePower / alertBuyValue
+    buyAlertCount       += 1
+if sellAlert 
+    gross           := sharesPurchased * sellValue
+    net             := gross - actualPurchasePower
+    sellCommission  := (gross / 100) * commission
+    totalCommission := buyCommission + sellCommission
+    tradeProfit     := net - totalCommission
+    gain            := tradeProfit / actualPurchasePower
+    closingBalance  := runningBalance + tradeProfit
+    runningBalance  := closingBalance
+    profitLoss      := ((runningBalance - openBalance) / openBalance) * 100
+    sellAlertCount  += 1
+    if sellValue>alertBuyValue
+        goodTradeCount +=1
+
+
+if show_table  and buyActive==1
+    Table = table.new(position.bottom_right, columns = 2, rows = 9, border_width = 1, bgcolor = color.black, border_color = color.gray)
+
+    table.cell(table_id = Table, column = 0, row = 0, text = "Backtest Results:", text_size = size.normal, text_color=color.white)
+    table.cell(table_id = Table, column = 1, row = 0, text = "Value:", text_size = size.normal, text_color=color.white)
+    table.cell(table_id = Table, column = 0, row = 1, text = "Starting Balance:", text_size = size.normal, text_color=color.silver, text_halign=text.align_left)
+    table.cell(table_id = Table, column = 1, row = 1, text =  str.tostring(openBalance,"###,###.##"), text_size = size.normal, text_color=color.white, text_halign=text.align_right)
+    table.cell(table_id = Table, column = 0, row = 2, text = "Closing Balance:", text_size = size.normal,text_color=color.silver, text_halign=text.align_left)
+    table.cell(table_id = Table, column = 1, row = 2, text = str.tostring(runningBalance,"###,###.##"), text_size = size.normal, text_color= runningBalance>=openBalance?color.green:color.red, text_halign=text.align_right)
+    table.cell(table_id = Table, column = 0, row = 3, text = "Profit/Loss%", text_size = size.normal, text_color=color.silver, text_halign=text.align_left)
+    table.cell(table_id = Table, column = 1, row = 3, text = str.tostring(profitLoss,format.percent), text_size = size.normal, text_color=runningBalance>=openBalance?color.green:color.red, text_halign=text.align_right)
+    table.cell(table_id = Table, column = 0, row = 4, text = "Profit/Loss Value", text_size = size.normal, text_color=color.silver, text_halign=text.align_left)
+    table.cell(table_id = Table, column = 1, row = 4, text = str.tostring(runningBalance-openBalance,"###,###.##"), text_size = size.normal, text_color=runningBalance-openBalance>=0?color.green:color.red, text_halign=text.align_right)
+    table.cell(table_id = Table, column = 0, row = 5, text = "Buy Alert Count:", text_size = size.normal, text_color=color.silver, text_halign=text.align_left) 
+    table.cell(table_id = Table, column = 1, row = 5, text = str.tostring(buyAlertCount,"###,###.##"), text_size = size.normal, text_color=color.silver, text_halign=text.align_right)
+    table.cell(table_id = Table, column = 0, row = 6, text = "Sell Alert Count:", text_size = size.normal, text_color=color.silver, text_halign=text.align_left) 
+    table.cell(table_id = Table, column = 1, row = 6, text = str.tostring(sellAlertCount,"###,###.##"), text_size = size.normal, text_color=color.silver, text_halign=text.align_right)
+    table.cell(table_id = Table, column = 0, row = 7, text = "Profitable Trade Count", text_size = size.normal, text_color=color.silver, text_halign=text.align_left)
+    table.cell(table_id = Table, column = 1, row = 7, text =  str.tostring(goodTradeCount,"###,###.##"), text_size = size.normal, text_color=color.silver, text_halign=text.align_right)
+    table.cell(table_id = Table, column = 0, row = 8, text = "% Profitable Trades:", text_size = size.normal, text_color=color.silver, text_halign=text.align_left)
+    table.cell(table_id = Table, column = 1, row = 8, text =  str.tostring((goodTradeCount/sellAlertCount)*100,format.percent), text_size = size.normal, text_color=color.white, text_halign=text.align_right)

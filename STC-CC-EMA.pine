@@ -1,0 +1,158 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//This strategy is excellent in timeperiod above 15min. So use it carefully
+//@version=5
+//This strategy can be used for daily entry for positional trading
+strategy('CCI & EMA + STC strategy', overlay=true, default_qty_value=100, 
+          margin_short=100, initial_capital=3000, default_qty_type=strategy.percent_of_equity,
+          calc_on_order_fills=true, calc_on_every_tick=false, precision=8, margin_long=100,
+          default_qty_value=90, commission_type=strategy.commission.percent, commission_value=.075)
+//
+//indicator(title="Backtesting- Indicator", shorttitle="Backtesting - Indicator", overlay=true)//
+
+//CC-EMA
+emalen = input.int(title='EMA long length', defval=200, minval=50, maxval=200, step=10)
+emalen2 = input.int(title='EMA short length', defval=50, minval=10, maxval=100, step=10)
+Return = input.float(title='Return (%)', defval=15, minval=5, maxval=100, step=5)
+Risk = input.float(title='Risk (%)', defval=5, minval=1, maxval=10, step=1)
+ema = ta.ema(close, emalen)
+emasmooth = ta.ema(ema, emalen)
+ema2 = ta.ema(close, emalen2)
+emasmooth2 = ta.ema(ema, emalen2)
+volMA = ta.sma(volume, 20)
+volcheck = volume > volMA
+
+//fidning CCI-100 and CCI-20 values value
+ma1 = ta.sma(close, 100)
+cci100 = (close - ma1) / (0.015 * ta.dev(close, 100))
+ma2 = ta.sma(close, 20)
+cci20 = (close - ma2) / (0.015 * ta.dev(close, 20))
+
+// STC
+
+fastLength = input(title='MACD Fast Length', defval=13)
+slowLength = input(title='MACD Slow Length', defval=49)
+cycleLength = input(title='Cycle Length', defval=5)
+d1Length = input(title='1st %D Length', defval=3)
+d2Length = input(title='2nd %D Length', defval=3)
+src = input(title='Source', defval=close)
+
+highlightBreakouts = input(title='Highlight Breakouts ?', defval=true)
+macd = ta.ema(src, fastLength) - ta.ema(src, slowLength)
+
+k = nz(fixnan(ta.stoch(macd, macd, macd, cycleLength)))
+d = ta.ema(k, d1Length)
+kd = nz(fixnan(ta.stoch(d, d, d, cycleLength)))
+stc = ta.ema(kd, d2Length)
+stc := stc > 100 ? 100 : stc < 0 ? 0 : stc
+
+stcColor = not highlightBreakouts ? stc > stc[1] ? color.green : color.red : #ff3013
+stcPlot = plot(stc, title='STC', color=stcColor, transp=0)
+
+upper = input(75, defval=75)
+lower = input(25, defval=25)
+
+transparent = color.new(color.gray, 100)
+
+upperLevel = plot(upper, title='Upper', color=color.new(color.gray, 0))
+hline(50, title='Middle', linestyle=hline.style_dotted)
+lowerLevel = plot(lower, title='Lower', color=color.new(color.gray, 0))
+
+fill(upperLevel, lowerLevel, color=color.new(#f9cb9c, 90))
+
+upperFillColor = stc > upper and highlightBreakouts ? color.green : transparent
+lowerFillColor = stc < lower and highlightBreakouts ? color.red : transparent
+
+fill(upperLevel, stcPlot, color=upperFillColor, transp=80)
+fill(lowerLevel, stcPlot, color=lowerFillColor, transp=80)
+
+// STC plot
+plotshape(ta.crossover(stc, lower) ? lower : na, title='Crossover', location=location.absolute, style=shape.circle, size=size.tiny, color=color.new(color.green, 0))
+plotshape(ta.crossunder(stc, upper) ? upper : na, title='Crossunder', location=location.absolute, style=shape.circle, size=size.tiny, color=color.new(color.red, 0))
+plotshape(long, style=shape.arrowup, text='Long', color=color.new(color.green, 0), location=location.belowbar)
+plotshape(short, style=shape.arrowdown, text='Short', color=color.new(color.red, 0), location=location.abovebar)
+//
+
+stc_long = ta.crossover(stc, lower) ? lower : na
+stc_short = ta.crossunder(stc, upper) ? upper : na
+//
+stc_long_filt = stc_long and not stc_short
+stc_short_filt = stc_short and not stc_long
+
+prev = 0
+prev := stc_long_filt ? 1 : stc_short_filt ? -1 : prev[1]
+
+stc_long_final = stc_long_filt and prev[1] == -1
+stc_short_final = stc_short_filt and prev[1] == 1
+
+//conditions for short and long entries
+BuyCond = stc_long_final and close > emasmooth and close > open and volcheck and cci100 > 0 and cci20 > 100 and close > ta.vwap
+SellCond = stc_short_final and close < emasmooth and close < open and volcheck and cci100 < 0 and cci20 < -100 and close < ta.vwap
+
+
+//
+//Buy and Sell Signals
+Buysignal = BuyCond and strategy.position_size == 0 and barstate.isconfirmed
+Sellsignal = SellCond and strategy.position_size == 0 and barstate.isconfirmed
+
+//settingup stoploss
+sllong = math.max(ema2, emasmooth)
+slshort = math.min(ema2, emasmooth)
+
+//Setting up Targets
+longtarget = close * (1 + Return / 100)
+shorttarget = close * (1 - Return / 100)
+
+//Save SLs and Target prices
+var StopPrice = 0.0
+var TargetPrice = 0.0
+var EntryPrice = 0.0
+
+
+//Detect Valid long setup and trigger alerts
+if Buysignal
+    StopPrice := sllong
+    EntryPrice := close
+    TargetPrice := longtarget
+    TargetPrice
+
+
+if Sellsignal
+    StopPrice := slshort
+    TargetPrice := shorttarget
+    EntryPrice := close
+    EntryPrice
+
+
+//Trailing Stoplosses
+if strategy.position_size > 0
+    StopPrice := math.max(StopPrice, ema2, emasmooth)
+    StopPrice
+
+if strategy.position_size < 0
+    StopPrice := math.min(StopPrice, ema2, emasmooth)
+    StopPrice
+
+//enter trades whenever there is signal
+strategy.entry(id='BUY', direction=strategy.long, when=Buysignal, alert_message='Buy signal given')
+strategy.entry(id='SELL', direction=strategy.short, when=Sellsignal, alert_message='Sell signal given')
+
+//Exit entries
+
+if cci100 < 0 or close < emasmooth or close < ema2
+    strategy.exit(id='Exit', from_entry='BUY', limit=TargetPrice, stop=StopPrice, when=strategy.position_size > 0, alert_message='Long entry closed')
+if cci100 > 0 or close > emasmooth or close > ema2
+    strategy.exit(id='Exit', from_entry='SELL', limit=TargetPrice, stop=StopPrice, when=strategy.position_size < 0, alert_message='Short entry closed')
+
+//Draw trade data
+stoplong = plot(strategy.position_size > 0 or Buysignal or Sellsignal ? StopPrice : na, title='Trailing stoploss long', color=color.new(color.red, 80), style=plot.style_linebr, linewidth=1)
+stopshort = plot(strategy.position_size < 0 or Sellsignal ? StopPrice : na, title='Trailing stoploss short', color=color.new(color.red, 80), style=plot.style_linebr, linewidth=1)
+candlenearest = plot(strategy.position_size < 0 ? high : strategy.position_size > 0 ? low : na, title='Candle nearest point', color=color.new(color.green, 80), style=plot.style_linebr, linewidth=1)
+fill(stoplong, candlenearest, color=color.new(color.green, 80))
+fill(stopshort, candlenearest, color=color.new(color.red, 80))
+
+//Draw Price action arrow
+plotshape(Buysignal ? 1 : na, style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), title='Bullish setup', size=size.small)
+plotshape(Sellsignal ? 1 : na, style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), title='Bearish setup', size=size.small)
+
+//Plot emasmooth and vwap
+plot(ta.vwap, title='VWAP', color=color.new(color.black, 0), linewidth=2, show_last=75)
