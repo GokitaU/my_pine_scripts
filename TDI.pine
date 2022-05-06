@@ -1,0 +1,53 @@
+//@version=4
+study("Traders Dynamic Index and EMA Alerts", shorttitle="TDI_2EMA")
+
+rsiPeriod = input(21, minval = 1, title = "RSI Period")
+bbandLength = input(34, minval = 1, title = "Bolinger Bband Length")
+lengthrsipl = input(7, minval = 0, title = "Fast MA on RSI")
+lengthtradesl = input(2, minval = 1, title = "Slow MA on RSI")
+highlightBreakouts = input(title="Highlight Breakouts ?", type=input.bool, defval=true)
+
+src = close                                                             // Source of Calculations (Close of Bar)
+rsi_close = rsi(src, rsiPeriod)                                         // RSI of Close
+ma_cur = sma(rsi_close, bbandLength)                                    // Moving Average of RSI [current]
+offs = (1.6185 * stdev(rsi_close, bbandLength))                                  // Offset
+up = ma_cur + offs                                                          // Upper B bands
+dn = ma_cur - offs                                                          // Lower B bands
+mid = (up + dn) / 2                                                     // Average of Upper and Lower B bands
+fastMA = sma(rsi_close, lengthrsipl)                                            // Moving Average of RSI 2 bars back
+slowMA = sma(rsi_close, lengthtradesl)                                          // Moving Average of RSI 7 bars back
+
+bb_upper = plot(up, "Upper Bolinger band", color = color.blue, linewidth = 1)               // Upper B band
+bb_lower = plot(dn, "Lower Bolinger band", color = color.blue, linewidth = 1)               // Lower B band
+//bb_midl = plot(mid, "Middle of Bolinger bands", color = color.white, linewidth = 1)      // Middle of B bands
+
+//plot(slowMA, "Slow MA", color = #00AB08, linewidth=2)                       // Plot Slow MA
+//plot(fastMA, "Fast MA", color = #ff0000, linewidth=2)                         // Plot Fast MA
+
+//RSI PLOT
+
+Color1 = rsi_close > rsi_close[1] ? color.green : color.red
+Color2 = rsi_close >= up ? color.green : rsi_close <= dn ? color.red : color.orange
+
+Color = highlightBreakouts ? Color2 : Color1
+
+rsiPlot = plot(rsi_close, title="RSI", color=Color, transp=0, linewidth=2)
+
+upperFillColor = rsi_close >= up and highlightBreakouts ? color.green : na
+lowerFillColor = rsi_close <= dn and highlightBreakouts ? color.red : na
+
+fill(bb_upper, rsiPlot, color=upperFillColor, transp=50)
+fill(bb_lower, rsiPlot, color=lowerFillColor, transp=50)
+
+// Breakout out of the B Bands
+positiveCondTDI = (rsi_close > up) or crossover(up, rsi_close)
+negativeCondTDI = (rsi_close < dn) or crossunder(dn, rsi_close)
+
+plotshape(positiveCondTDI, color=Color, location=location.top, style=shape.circle, size=size.tiny, transp=50)
+plotshape(negativeCondTDI, color=Color, location=location.top, style=shape.circle, size=size.tiny, transp=50)
+
+
+
+
+
+

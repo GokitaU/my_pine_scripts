@@ -1,0 +1,170 @@
+//@version=3
+study("TDI buy sell ver.2 by Pusat", shorttitle="TDI buy sell ver.2 by Pusat")
+rsiPeriod = input(21, minval = 1, title = "RSI Period")
+bandLength = input(34, minval = 1, title = "Band Length")
+lengthrsipl = input(2, minval = 0, title = "Fast MA on RSI")
+lengthtradesl = input(7, minval = 1, title = "Slow MA on RSI")
+zlmaSourceDORTLU=0.0
+ma_typeDORTLU      = input(title = "MA Type",         type = string,  defval = "SMA", options = ['ZEROLAG ','WILDERS','SMA', 'EMA', 'WMA', 'VWMA', 'HMA', 'SMMA', 'DEMA '])
+short_maDORTLU_srcDORTLU = input(title = "MA Source", type = source,  defval = close)
+src = short_maDORTLU_srcDORTLU                                                             
+r = rsi(src, rsiPeriod)
+s1DORTLU =lengthtradesl
+s2DORTLU  = lengthrsipl
+short_maDORTLU_srcDORTLU:=r
+zlmaSourceDORTLU:= short_maDORTLU_srcDORTLU
+
+short_maDORTLU = 0.0
+ma=0.0
+a1DORTLU=0.0
+a2DORTLU=0.0
+// Simple Moving Average (SMA)
+if ma_typeDORTLU == 'SMA' 
+    a1DORTLU := sma(short_maDORTLU_srcDORTLU, s1DORTLU)
+    a2DORTLU := sma(short_maDORTLU_srcDORTLU, s2DORTLU)
+    ma:= sma(short_maDORTLU_srcDORTLU, bandLength)     
+    
+
+// Exponential Moving Average (EMA)
+if ma_typeDORTLU == 'EMA'
+    a1DORTLU := ema(short_maDORTLU_srcDORTLU, s1DORTLU)
+    a2DORTLU := ema(short_maDORTLU_srcDORTLU, s2DORTLU)
+    ma:= ema(short_maDORTLU_srcDORTLU, bandLength)
+  
+
+// Weighted Moving Average (WMA)
+if ma_typeDORTLU == 'WMA'
+    a1DORTLU := wma(short_maDORTLU_srcDORTLU, s1DORTLU)
+    a2DORTLU := wma(short_maDORTLU_srcDORTLU, s2DORTLU)
+    ma:= wma(short_maDORTLU_srcDORTLU, bandLength)
+
+// Hull Moving Average (HMA)
+if ma_typeDORTLU == 'HMA'
+    a1DORTLU := wma(2*wma(short_maDORTLU_srcDORTLU, s1DORTLU/2)-wma(short_maDORTLU_srcDORTLU, s1DORTLU), round(sqrt(s1DORTLU)))
+    a2DORTLU := wma(2*wma(short_maDORTLU_srcDORTLU, s2DORTLU/2)-wma(short_maDORTLU_srcDORTLU, s2DORTLU), round(sqrt(s2DORTLU)))
+    ma:= wma(2*wma(short_maDORTLU_srcDORTLU, bandLength/2)-wma(short_maDORTLU_srcDORTLU, bandLength), round(sqrt(bandLength)))
+// Volume-weighted Moving Average (VWMA)
+if ma_typeDORTLU == 'VWMA'
+    a1DORTLU := vwma(short_maDORTLU_srcDORTLU, s1DORTLU)
+    a2DORTLU := vwma(short_maDORTLU_srcDORTLU, s2DORTLU)
+    ma:= vwma(short_maDORTLU_srcDORTLU, bandLength)
+
+// Smoothed Moving Average (SMMA)    
+if ma_typeDORTLU == 'SMMA'
+    a1DORTLU := na(a1DORTLU[1]) ? sma(short_maDORTLU_srcDORTLU, s1DORTLU) : (a1DORTLU[1] * (s1DORTLU - 1) + short_maDORTLU_srcDORTLU) / s1DORTLU
+    a2DORTLU := na(a2DORTLU[1]) ? sma(short_maDORTLU_srcDORTLU, s2DORTLU) : (a2DORTLU[1] * (s2DORTLU - 1) + short_maDORTLU_srcDORTLU) / s2DORTLU
+    ma:= na(ma[1]) ? sma(short_maDORTLU_srcDORTLU, bandLength) : (ma[1] * (bandLength - 1) + short_maDORTLU_srcDORTLU) / bandLength
+// Double Exponential Moving Average (DEMA)
+if ma_typeDORTLU == 'DEMA '
+    e1_shorta1DORTLU = ema(short_maDORTLU_srcDORTLU, s1DORTLU)
+    a1DORTLU := 2 * e1_shorta1DORTLU - ema(e1_shorta1DORTLU, s1DORTLU)
+    e1_shorta2DORTLU = ema(short_maDORTLU_srcDORTLU, s2DORTLU)
+    a2DORTLU := 2 * e1_shorta2DORTLU - ema(e1_shorta2DORTLU, s2DORTLU)
+    e111 = ema(short_maDORTLU_srcDORTLU, bandLength)
+    ma := 2 * e111 - ema(e111, bandLength)
+
+if ma_typeDORTLU == 'WILDERS'
+    wild2=0.0
+    wild2:=nz(wild2[1])+(short_maDORTLU_srcDORTLU-nz(wild2[1]))/s2DORTLU
+    a2DORTLU:=wild2
+if ma_typeDORTLU == 'WILDERS'
+    wild1=0.0
+    wild1:=nz(wild1[1])+(short_maDORTLU_srcDORTLU-nz(wild1[1]))/s1DORTLU
+    a1DORTLU:=wild1    
+if ma_typeDORTLU == 'WILDERS'
+    wild3=0.0
+    wild3:=nz(wild3[1])+(short_maDORTLU_srcDORTLU-nz(wild3[1]))/bandLength
+    ma:=wild3    
+
+if ma_typeDORTLU == 'ZEROLAG '
+    zema1DORTLU=ema(zlmaSourceDORTLU, s1DORTLU)
+    zema2DORTLU=ema(zema1DORTLU, s1DORTLU)
+    c1bir=zema1DORTLU-zema2DORTLU
+    s1DORTLU1=zema1DORTLU+c1bir
+    zema1DORTLU2=ema(zlmaSourceDORTLU, s2DORTLU)
+    zema2DORTLU2=ema(zema1DORTLU2, s2DORTLU)
+    c12=zema1DORTLU2-zema2DORTLU2
+    s2DORTLU2=zema1DORTLU2+c12
+    zz1=ema(zlmaSourceDORTLU, bandLength)
+    zz2=ema(zz1, bandLength)
+    c11=zz1-zz2
+    ma:=zz1+c11
+    a1DORTLU:=s1DORTLU1
+    a2DORTLU:=s2DORTLU2
+
+offs = (1.6185 * stdev(r, bandLength))                                  // Offset
+up = ma + offs                                                          // Upper Bands
+dn = ma - offs                                                          // Lower Bands
+mid = (up + dn) / 2                                                     // Average of Upper and Lower Bands
+fastMA =  a1DORTLU                                        // Moving Average of RSI 2 bars back
+slowMA =  a2DORTLU                                         // Moving Average of RSI 7 bars back
+hline(20)                                                               // ExtremelyOversold
+hline(30)                                                               // Oversold
+hline(50)                                                               // Midline
+hline(70)                                                               // Overbought
+hline(80)                                                               // ExtremelyOverbought
+renk=slowMA >fastMA ?blue:red
+upl = plot(up, "Upper Band", color = navy, linewidth = 3)               // Upper Band
+dnl = plot(dn, "Lower Band", color = navy, linewidth = 3)               // Lower Band
+midl = plot(mid, "Middle of Bands", color = yellow, linewidth = 1)      // Middle of Bands
+fill(upl,midl,color=red,transp=80)
+fill(midl,dnl,color=green,transp=80)
+plot(slowMA, "Slow MA", color=renk, linewidth=4)                       // Plot Slow MA
+plot(fastMA, "Fast MA", color=orange, linewidth=3)                     // Plot Fast MA
+
+sart=input(true, title=" Condition Upper band / Lower Band  on-off" )
+
+long= (slowMA >=fastMA and slowMA[1] <=fastMA[1])
+short =(slowMA <=fastMA and slowMA[1]>=fastMA[1])
+longrenk=(slowMA >=fastMA and slowMA[1] <=fastMA[1])
+shortrenk=(slowMA <=fastMA and slowMA[1]>=fastMA[1])
+longBAND= (slowMA >=dn and slowMA[1] <=dn[1])
+shortBAND =(slowMA <=up and slowMA[1]>=up[1])
+
+
+last_signal = 0
+long_final  = long  and (nz(last_signal[1]) == 0 or nz(last_signal[1]) == 2  or nz(last_signal[1]) == 4)
+short_final = short and  (nz(last_signal[1]) == 0 or nz(last_signal[1]) == 1 or nz(last_signal[1]) == 3 )
+longBAND_final = longBAND and (nz(last_signal[1]) == 0 or nz(last_signal[1]) == 1 or nz(last_signal[1]) == 2 or nz(last_signal[1]) == 4)
+shortBAND_final = shortBAND and (nz(last_signal[1]) == 0 or nz(last_signal[1]) == 1 or nz(last_signal[1]) == 3 or nz(last_signal[1]) == 2)
+alertcondition(long_final and sart, title="al alarmı", message=" al verdi!!!")
+alertcondition(short_final and sart, title="sat alarmı", message=" sat verdi!!!")
+alertcondition(longBAND_final and sart, title="al  band alarmı", message=" al verdi!!!")
+alertcondition(shortBAND_final and sart, title="sat band  alarmı", message=" sat verdi!!!")
+last_signal := long_final ? 1 : short_final ? 2 :longBAND_final ? 3 :shortBAND_final ? 4 : last_signal[1]
+
+plotshape(long_final and sart ? slowMA : na, title="al etiketi", color=blue, text="B", 
+  textcolor=white,
+  style=shape.labelup,
+  location=location.absolute)
+plotshape(short_final and sart ? slowMA : na, title="sat etiketi",color=red, text="S", 
+   textcolor=white,
+   style=shape.labeldown,
+   location=location.absolute)
+plotshape(longBAND_final and sart  ? slowMA : na, title="al band etiketi", color=blue, text="BB", 
+  textcolor=white,
+  style=shape.labelup,
+  location=location.absolute)
+plotshape(shortBAND_final and sart ? slowMA : na, title="sat band etiketi",color=red, text="SS", 
+   textcolor=white,
+   style=shape.labeldown,
+   location=location.absolute)
+
+
+
+last_signalrenk = 0
+long_finalrenk  = longrenk  and (nz(last_signalrenk[1]) == 0 or nz(last_signalrenk[1]) == -1)
+short_finalrenk = shortrenk and (nz(last_signalrenk[1]) == 0 or nz(last_signalrenk[1]) == 1)
+
+alertcondition(long_finalrenk and not sart, title="buy alarmrenk", message="buy signal!!!")
+alertcondition(short_finalrenk and not sart, title="sell alarmrenk", message="sell signal!!!")
+last_signalrenk := long_finalrenk ? 1 : short_finalrenk ? -1 : last_signalrenk[1]
+
+plotshape(long_finalrenk and not sart ? slowMA : na, title="al etiketi renk", color=blue, text="B", 
+  textcolor=white,
+  style=shape.labelup,
+  location=location.absolute)
+plotshape(short_finalrenk and not sart ? slowMA : na, title="sat etiketi renk",color=red, text="S", 
+   textcolor=white,
+   style=shape.labeldown,
+   location=location.absolute)
