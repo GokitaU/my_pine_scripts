@@ -1,0 +1,347 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Threefold_Ghost
+//
+//***************************************************************NO BIAS, NO GUESSING, JUST MATH******************************************************************************************
+//
+//This script includes open-source code from the following authors:
+//
+//HPotter
+//ChrisMoody
+//LonesomeTheBlue
+//mejialucas
+//
+//Thank you authors for publishing your work
+//
+//This script was modified to enhance previous work as well as to serve as a tool for new and seasoned traders alike. The following indicators are mashed together
+//because they are all math and trend based, creating a very good indication of what the trend is without any bias. By mashing these indicators together, new traders
+//can better understand why price may react certain ways and seasoned traders can further deep dive a trend to confirm entries and exits. The script can be used
+//in any timeframe with any ticker. Note, script is determined by the bar close. Wait for the bar close for confirmations. 
+//
+//*****************************************************************HOW TO USE THIS INDICATOR**********************************************************************************************
+//
+//MACD:
+//Defaulted to an 8 bar EMA and a 16 bar EMA to calculate the MACD rather than traditional 12 and 26 bar EMAs. Smaller amount of bars will react faster to price movement.
+//Signal defaulted to an 11 bar SMA rather than the traditional 9 bars. This smooths out the Signal which helps a little when there is chop in the market.
+//When inside of bars are gray, MACD above 0 which is bullish momentum. When inside of bars are black, MACD below 0 which is bearish momentum.
+//MACD is crossing above signal on green up arrow alert which is bullish and MACD is crossing below signal on red down arrow alert which is bearish.
+//
+//MOVING AVERAGE:
+//EMA and SMA are both plotted. Since EMA applies more weight to data that is more current, EMA is defaulted to 50 bars and is a dotted line whereas
+//SMA is defaulted to 200 bars and is a solid line. Both will change color, green when the average is moving upwards and black when the average is moving downwards.
+//There is a Golden Cross alert when EMA crosses above SMA which is bullish and a Death Cross alert when EMA crosses below SMA which is bearish.
+//
+//LINEAR REGRESSION:
+//Defaulted to 100 bars. Price is mathematically prone to trade within the regression channel but the channel is dynamic so it will adjust with every bar close.
+//If price is at the top of channel but begins to close below 2nd highest line, then price is likely regressing to the bottom of the channel. If the price is already
+//at bottom of channel and then begins to close above the 2nd lowest line, price is likely regressing back to the top of the channel. Channel colors will change based
+//on trend, green when trend is bullish and maroon when trend is bearish
+//
+//SUPERTREND:
+//The multiplier setting adjusts how sensitive to price you want the supertrend to be and the length setting adjusts how many bars you want to use. This indicator
+//calculates two supertrends simultaneously. There is a Long alert and a lime green support line plotted when the short term supertrend is bullish
+//and a Short alert and a red resistance line plotted when short term supertrend is bearish. There are larger Trend alerts and support/resistances lines plotted with
+//a color fill when the long term supertrend is either bullish or bearish. Use Long and Short alerts as a guide to confirm entries and not as actual buy/sell signals.
+//
+//VWAP:
+//Color changes to white line when VWAP is rising which is bullish and changes to a purple line when VWAP is dropping which is bearish
+//
+//****************************************************************************************************************************************************************************************
+//@version=5
+indicator(title="Trend Finder - Threefold_Ghost", shorttitle="TF - T_G", overlay=true, max_lines_count=500, max_labels_count=500)
+
+//track macd
+fastLength = input.int(8, minval=1, title="Macd Short EMA", group="MACD Settings")
+slowLength = input.int(16, minval=1, title="Macd Long EMA")
+signalLength = input.int(11, minval=1, title="Macd Signal SMA")
+fastMA = ta.ema(close, fastLength)
+slowMA = ta.ema(close, slowLength)
+macd = fastMA - slowMA
+signal = ta.sma(macd, signalLength)
+if ta.crossover(macd,signal)
+    label.new(bar_index, na, text="", yloc=yloc.belowbar, color=color.lime, textcolor=color.gray, size=size.small, style=label.style_arrowup)
+if ta.crossover(signal, macd)
+    label.new(bar_index, na, text="", yloc=yloc.abovebar, color=color.red, textcolor=color.gray, size=size.small, style=label.style_arrowdown)
+barcolor(macd > 0 ? color.new(color.gray, 0): macd < 0 ? color.new(color.black, 0) : na, title="Macd +/- Bar Color")
+
+//calculate EMA
+emaplot = input (true, title="Show EMA1 on chart", group="EMA/SMA Settings")
+len9 = input.int(50, minval=1, title="EMA1 Length")
+src9 = close
+out9 = ta.ema(src9, len9)
+up9 = out9 > out9[1]
+down9 = out9 < out9[1]
+mycolor = up9 ? color.lime : down9 ? color.black : color.white
+plot(out9 and emaplot ? out9 :na, title="EMA1", color=mycolor, linewidth=1, style=plot.style_circles)
+
+emaplot2 = input (false, title="Show EMA2 on chart")
+len6 = input.int(200, minval=1, title="EMA2 Length")
+src6 = close
+out6 = ta.ema(src6, len6)
+up6 = out6 > out6[1]
+down6 = out6 < out6[1]
+mycolor3 = up6 ? color.lime : down6 ? color.black : color.white
+plot(out6 and emaplot2 ? out6 :na, title="EMA2", color=mycolor3, linewidth=3, style=plot.style_cross)
+    
+smaplot = input (true, title="Show SMA on chart")
+len7 = input.int(200, minval=1, title="SMA Length")
+src7 = close
+out7 = ta.sma(src7, len7)
+up7 = out7 > out7[1]
+down7 = out7 < out7[1]
+mycolor2 = up7 ? color.new(color.lime, 36) : down7 ? color.new(color.black, 36) : color.new(color.white, 36)
+plot(out7 and smaplot ? out7 :na , title="SMA", color=mycolor2, linewidth=6)
+
+if ta.crossover(out9, out7)
+    label.new(bar_index, na, text="Golden Cross", yloc=yloc.belowbar, color=color.gray, textcolor=color.yellow, style=label.style_xcross, size=size.small)
+if ta.crossover(out7, out9)
+    label.new(bar_index, na, text="Death Cross", yloc=yloc.abovebar, color=color.gray, textcolor=color.red, style=label.style_xcross, size=size.small)
+alertcondition(ta.crossover(out9, out7), title="Golden Cross", message="Golden Cross")
+alertcondition(ta.crossover(out7, out9), title="Death Cross", message="Death Cross")
+
+//calculate linear regression lines
+src = input(defval = close, title = "Linear Regression Source", group="Linear Regression Settings")
+len = input.int(defval = 100, title = "Linear Regression Length", minval = 10)
+devlen = input.float(defval = 2., title = "Linear Regression Deviation", minval = 0.1, step = 0.1)
+extendit = input(defval = true, title = "Extend Linear Regression Lines")
+showfibo = input(defval = true, title = "Show Linear Regression Fibonacci Levels")
+showbroken = input(defval = false, title = "Show Linear Regression Broken Channel", inline = "brk")
+brokencol = input(defval = color.blue, title = "", inline = "brk")
+upcol = input(defval = color.new(#024b30, 6), title = "Up/Down Linear Regression Trend Colors", inline = "trcols")
+dncol = input(defval = color.new(color.maroon, 6), title = "", inline = "trcols")
+widt = input(defval = 3, title = "Linear Regression Line Width")
+
+var fibo_ratios = array.new_float(0)
+var colors = array.new_color(2)
+if barstate.isfirst
+    array.unshift(colors, upcol)
+    array.unshift(colors, dncol)
+    array.push(fibo_ratios, 0.236)
+    array.push(fibo_ratios, 0.382)
+    array.push(fibo_ratios, 0.618)
+    array.push(fibo_ratios, 0.786)
+
+
+get_channel(src, len)=>
+    mid = math.sum(src, len) / len
+    slope = ta.linreg(src, len, 0) - ta.linreg(src, len, 1)
+    intercept  = mid - slope * math.floor(len / 2) + ((1 - (len % 2)) / 2) * slope
+    endy = intercept  + slope * (len - 1) 
+    dev = 0.0
+    for x = 0 to len - 1
+        dev := dev + math.pow(src[x] - (slope * (len - x) + intercept), 2)
+    dev := math.sqrt(dev/len)
+    [intercept, endy, dev, slope]
+
+[y1_, y2_, dev, slope] = get_channel(src, len)
+
+outofchannel = (slope > 0 and close < y2_ - dev * devlen) ? 0 : (slope < 0 and close > y2_ + dev * devlen) ? 2 : -1
+
+var reglines = array.new_line(3)
+var fibolines = array.new_line(4)
+for x = 0 to 2
+    if not showbroken or outofchannel != x or nz(outofchannel[1], -1) != -1
+        line.delete(array.get(reglines, x))
+    else
+        line.set_color(array.get(reglines, x), color = brokencol)
+        line.set_width(array.get(reglines, x), width = 2)
+        line.set_style(array.get(reglines, x), style = line.style_dotted)
+        line.set_extend(array.get(reglines, x), extend = extend.none)
+    
+    array.set(reglines, x, 
+              line.new(x1 = bar_index - (len - 1), 
+                       y1 = y1_ + dev * devlen * (x - 1), 
+                       x2 = bar_index, 
+                       y2 = y2_ + dev * devlen * (x - 1),
+                       color = array.get(colors, math.round(math.max(math.sign(slope), 0))),
+                       style =  x % 2 == 1 ? line.style_solid : line.style_dashed,
+                       width = widt,
+                       extend = extendit ? extend.right : extend.none))
+
+if showfibo
+    for x = 0 to 3
+        line.delete(array.get(fibolines, x))
+        array.set(fibolines, x, 
+                  line.new(x1 = bar_index - (len - 1), 
+                           y1 = y1_ - dev * devlen + dev * devlen * 2 * array.get(fibo_ratios, x), 
+                           x2 = bar_index, 
+                           y2 = y2_ - dev * devlen + dev * devlen * 2 * array.get(fibo_ratios, x),
+                           color = array.get(colors, math.round(math.max(math.sign(slope), 0))),
+                           style =  line.style_dotted,
+                           width = 1,
+                           extend = extendit ? extend.right : extend.none))
+    
+var label sidelab = label.new(x = bar_index - (len - 1), y = y1_, text = "S",  size = size.large)
+txt = slope > 0 ? slope > slope[1] ? "⇑" : "⇗" : slope < 0 ? slope < slope[1] ? "⇓" : "⇘" : "⇒"
+stl = slope > 0 ? slope > slope[1] ? label.style_label_up : label.style_label_upper_right : slope < 0 ? slope < slope[1] ? label.style_label_down :  label.style_label_lower_right : label.style_label_right
+label.set_style(sidelab, stl)
+label.set_text(sidelab, txt)
+label.set_x(sidelab, bar_index - (len - 1))
+label.set_y(sidelab, slope > 0 ? y1_ - dev * devlen : slope < 0 ? y1_ + dev * devlen : y1_)
+label.set_color(sidelab, slope > 0 ? upcol : slope < 0 ? dncol : color.white)
+
+// direction
+trendisup = math.sign(slope) != math.sign(slope[1]) and slope > 0
+trendisdown = math.sign(slope) != math.sign(slope[1]) and slope < 0
+
+//supertrend longer timeframe
+var bull = 0
+var bear = 0
+
+Factor2=input.int(3, minval=1,maxval = 100,title="ATR Multiplier", group="Long Term Supertrend Settings")
+Pd2=input.int(20, minval=1,maxval = 200, title="Length")
+source6=input(ohlc4, title="Source")
+
+//get the atr
+Up2=source6-(Factor2*ta.atr(Pd2))
+Dn2=source6+(Factor2*ta.atr(Pd2))
+
+float TrendUp2 = 0
+float TrendDown2= 0
+float Trend2 = 0
+if close[1]>TrendUp2[1]
+    TrendUp2 := math.max(Up2,TrendUp2[1])
+else
+    TrendUp2 := Up2
+    
+if close[1]<TrendDown2[1]
+    TrendDown2 := math.min(Dn2,TrendDown2[1])
+else
+    TrendDown2 := Dn2
+
+if(close > TrendDown2[1])
+    Trend2 :=  1
+else if(close < TrendUp2[1])
+    Trend2 := -1
+else
+    Trend2 := nz(Trend2[1],1)
+    
+Tsl2 = Trend2==1? TrendUp2: TrendDown2
+
+linecolor2 = Trend2 == 1 ? color.lime : color.new(#9a0000, 0)
+
+plot(Tsl2, color = linecolor2, linewidth = 6, style = plot.style_stepline, title = "Long Term SuperTrend")
+
+if ta.cross(close,Tsl2) and close>Tsl2
+    label.new(bar_index, na, text="Buy", yloc=yloc.belowbar, color=color.black, textcolor=color.lime, size=size.large, style=label.style_label_up)
+    bull := 1
+    bear := 0
+if ta.cross(Tsl2,close) and close<Tsl2
+    label.new(bar_index, na, text="Sell", yloc=yloc.abovebar, color=color.black, textcolor=color.red, size=size.large, style=label.style_label_down)
+    bear := 1
+    bull := 0
+
+//supertrend shorter timeframe
+Factor=input.int(1, minval=1,maxval = 100,title="ATR Multiplier", group="Short Term Supertrend Settings")
+Pd=input.int(10, minval=1,maxval = 200, title="Length")
+source3=input(ohlc4, title="Source")
+
+//get the atr
+Up=source3-(Factor*ta.atr(Pd))
+Dn=source3+(Factor*ta.atr(Pd))
+
+float TrendUp = 0
+float TrendDown= 0
+float Trend = 0
+if close[1]>TrendUp[1]
+    TrendUp := math.max(Up,TrendUp[1])
+else
+    TrendUp := Up
+    
+if close[1]<TrendDown[1]
+    TrendDown := math.min(Dn,TrendDown[1])
+else
+    TrendDown := Dn
+
+if(close > TrendDown[1])
+    Trend :=  1
+else if(close < TrendUp[1])
+    Trend := -1
+else
+    Trend := nz(Trend[1],1)
+    
+Tsl = Trend==1? TrendUp: TrendDown
+
+linecolor = Trend == 1 ? color.lime : color.new(#9a0000, 0)
+
+plot(Tsl, color = linecolor, linewidth = 2, style = plot.style_line, title = "Short Term SuperTrend")
+
+if ta.cross(close,Tsl) and close>Tsl
+    if(bull == 1)
+        label.new(bar_index, na, text="Long", yloc=yloc.belowbar, color=color.black, textcolor=color.lime, size=size.small, style=label.style_label_up)
+    else
+        label.new(bar_index, na, text="Exit", yloc=yloc.belowbar, color=color.black, textcolor=color.lime, size=size.small, style=label.style_label_up)
+if ta.cross(Tsl,close) and close<Tsl
+    if(bear == 1)
+        label.new(bar_index, na, text="Short", yloc=yloc.abovebar, color=color.black, textcolor=color.red, size=size.small, style=label.style_label_down)
+    else
+        label.new(bar_index, na, text="Exit", yloc=yloc.abovebar, color=color.black, textcolor=color.red, size=size.small, style=label.style_label_down)
+//set alerts    
+alertcondition(ta.cross(close,Tsl2) and close>Tsl2, title="Buy", message="Go Long")
+alertcondition(ta.cross(Tsl2,close) and close<Tsl2, title="Sell", message="Go Short")
+point1 = plot(Tsl, color = linecolor, linewidth = 2, style = plot.style_line, title = "Short Term SuperTrend")
+point2 = plot(Tsl2, color = linecolor2, linewidth = 6, style = plot.style_stepline, title = "Long Term SuperTrend")
+fill(point1,point2, color.new(linecolor2,90))
+
+//vwap
+showVwap = input (true, title="Show VWAP on chart", group="VWAP Settings")
+hideonDWM = input(false, title="Hide VWAP on 1D or Above")
+var cumVol = 0.
+cumVol += nz(volume)
+//if no volume provided, VWAP switched OFF by default
+if barstate.islast and cumVol == 0
+    showVwap := false
+    
+computeVWAP(srcVWAP, isNewPeriod) =>
+	var float sumSrcVol = na
+	var float sumVol = na
+    var float sumSrcSrcVol = na
+
+	sumSrcVol := isNewPeriod ? srcVWAP * volume : srcVWAP * volume + sumSrcVol[1]
+	sumVol := isNewPeriod ? volume : volume + sumVol[1]
+	// sumSrcSrcVol calculates the dividend of the equation that is later used to calculate the standard deviation
+	sumSrcSrcVol := isNewPeriod ? volume * math.pow(src, 2) : volume * math.pow(src, 2) + sumSrcSrcVol[1]
+
+	_vwap = sumSrcVol / sumVol
+	variance = sumSrcSrcVol / sumVol - math.pow(_vwap, 2)
+	variance := variance < 0 ? 0 : variance
+	stDev = math.sqrt(variance)
+	[_vwap]
+
+var anchor = input.string(defval = "Session", title="Anchor Period",
+ options=["Session", "Week", "Month", "Quarter", "Year", "Decade", "Century", "Earnings", "Dividends", "Splits"], group="VWAP Settings")
+srcVWAP = input(title = "Source", defval = hlc3, group="VWAP Settings")
+offset = input(0, title="Offset", group="VWAP Settings")
+
+timeChange(period) =>
+	ta.change(time(period))
+
+new_earnings = request.earnings(syminfo.tickerid, earnings.actual, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+new_dividends = request.dividends(syminfo.tickerid, dividends.gross, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+new_split = request.splits(syminfo.tickerid, splits.denominator, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+
+isNewPeriod = switch anchor
+	"Earnings" => not na(new_earnings)
+	"Dividends" => not na(new_dividends)
+	"Splits" => not na(new_split)
+	"Session" => timeChange("D")
+	"Week" => timeChange("W")
+	"Month" => timeChange("M")
+	"Quarter" => timeChange("3M")
+	"Year" => timeChange("12M")
+	"Decade" => timeChange("12M") and year % 10 == 0
+	"Century" => timeChange("12M") and year % 100 == 0
+	=> false
+
+isEsdAnchor = anchor == "Earnings" or anchor == "Dividends" or anchor == "Splits"
+if na(srcVWAP[1]) and not isEsdAnchor
+	isNewPeriod := true
+
+float vwapValue = na
+float std = na
+color colorVWAP = na
+if not (hideonDWM and timeframe.isdwm)
+    [_vwap] = computeVWAP(srcVWAP, isNewPeriod)
+    vwapValue := _vwap
+    colorVWAP := _vwap > _vwap[1] ? color.white : _vwap < _vwap[1] ? color.purple : color.gray
+
+plot(vwapValue and showVwap ? vwapValue : na, title="VWAP", color=colorVWAP, offset=offset)

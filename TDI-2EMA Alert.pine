@@ -1,5 +1,5 @@
 //@version=4
-study("Traders Dynamic Index and EMA Alerts", shorttitle="TDI_2EMA")
+study("Traders Dynamic Index and EMA Alerts", shorttitle="TDI_2EMA", overlay=true, max_lines_count=500, max_labels_count=500)
 
 rsiPeriod = input(21, minval = 1, title = "RSI Period")
 bbandLength = input(34, minval = 1, title = "Bolinger Bband Length")
@@ -47,7 +47,35 @@ plotshape(positiveCondTDI, color=Color, location=location.top, style=shape.circl
 plotshape(negativeCondTDI, color=Color, location=location.top, style=shape.circle, size=size.tiny, transp=50)
 
 
+// DEMA
+exponential = input(true, title="Exponential MA")
+
+ma50 = exponential ? ema(src, 50) : sma(src, 50)
+ma200 = exponential ? ema(src, 200) : sma(src, 200)
+
+plot(ma50, color=color.new(color.yellow, 0), title="[E]MA50")
+plot(ma200, color=color.new(color.white, 0), title="[E]MA200")
+
+if crossover(ma50, ma200)
+    label.new(bar_index, na, text="Golden Cross", yloc=yloc.belowbar, color=color.gray, textcolor=color.yellow, style=label.style_xcross, size=size.small)
+if crossunder(ma50, ma200)
+    label.new(bar_index, na, text="Death Cross", yloc=yloc.abovebar, color=color.gray, textcolor=color.red, style=label.style_xcross, size=size.small)
 
 
 
 
+//@version=5
+indicator(shorttitle="BB", title="Bollinger Bands", overlay=true, timeframe="", timeframe_gaps=true)
+
+length = input.int(20, minval=1)
+src = input(close, title="Source")
+mult = input.float(2.0, minval=0.001, maxval=50, title="StdDev")
+basis = ta.sma(src, length)
+dev = mult * ta.stdev(src, length)
+upper = basis + dev
+lower = basis - dev
+offset = input.int(0, "Offset", minval = -500, maxval = 500)
+plot(basis, "Basis", color=#FF6D00, offset = offset)
+p1 = plot(upper, "Upper", color=#2962FF, offset = offset)
+p2 = plot(lower, "Lower", color=#2962FF, offset = offset)
+fill(p1, p2, title = "Background", color=color.rgb(33, 150, 243, 95))
