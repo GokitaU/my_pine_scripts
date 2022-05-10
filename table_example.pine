@@ -1,0 +1,30 @@
+var tbl = table.new(position.top_right, 2, 8, bgcolor = color.black, border_width=3)
+//table.set_frame_width(tbl, 30)
+
+if (show_info)
+
+
+
+    table.cell(tbl, 0, 0, "",  bgcolor = color.black,text_color = color.white, width = 15, height = 6)
+    table.cell(tbl, 1, 0, "", bgcolor = color.black,text_color = color.white,  width = 10, height = 6)
+    
+    table.cell(tbl, 0, 2, "Condition",  bgcolor = color.black,text_color = color.white, width = 15, height = 6)
+    table.cell(tbl, 1, 2, "Value", bgcolor = color.black,text_color = color.white,  width = 10, height = 6)
+     
+    table.cell(tbl, 0, 3, "CondPriceTEMA",  bgcolor = color.black, text_color = color.white, width = 15, height = 6)
+    table.cell(tbl, 1, 3, CondPriceTEMA, bgcolor = color.black, text_color = color.white, width = 10, height = 6)
+     
+    table.cell(tbl, 0, 4, "CondTEMAEMA",  bgcolor = color.black, text_color = color.white, width = 15, height = 6)
+    table.cell(tbl, 1, 4, CondTEMAEMA, bgcolor = color.black, text_color = color.white, width = 10, height = 6)
+    
+    table.cell(tbl, 0, 5, "CondPriceBB",  bgcolor = color.black, text_color = color.white, width = 15, height = 6)
+    table.cell(tbl, 1, 5, CondPriceBB, bgcolor = color.black, text_color = color.white, width = 10, height = 6)
+
+    table.cell(tbl, 0, 6, "CondCross",  bgcolor = color.black, text_color = color.white, width = 15, height = 6)
+    table.cell(tbl, 1, 6, CondCross, bgcolor = color.black, text_color = color.white, width = 10, height = 6)
+    
+    table.cell(tbl, 0, 6, "ImpOneUp",  bgcolor = color.black, text_color = color.white, width = 15, height = 6)
+    table.cell(tbl, 1, 6, str.tostring(ImpOneUp), bgcolor = color.black, text_color = color.white, width = 10, height = 6)
+    
+    table.cell(tbl, 0, 7, "ImpOneDown",  bgcolor = color.black, text_color = color.white, width = 15, height = 6)
+    table.cell(tbl, 1, 7, str.tostring(ImpOneDown), bgcolor = color.black, text_color = color.white, width = 10, height = 6)

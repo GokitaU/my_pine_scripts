@@ -1,0 +1,19 @@
+TDI+TEMA.txt
+
+0. negative TEMA vs EMA
+1. positive on priceBB + positive on TDI
+3. almostcross+ GC  
+4. price cross TEMA down -> negative on TDI
+5. price cross TEMA up (positive on TDI +  priceBB ?)-> entry long
+
+
+
+0. positive TEMA vs EMA
+1. negative on priceBB + negative on TDI
+3. almostcross+ DC
+4. price cross TEMA up -> positive on TDI
+5. price cross TEMA down (negative on TDI + BB ?) -> entry short
+
+
+
+

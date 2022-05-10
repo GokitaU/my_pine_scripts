@@ -1,0 +1,416 @@
+//@version=5
+indicator('Traders Dynamic Index and TEMA Alerts', shorttitle='TDI_TEMA', overlay=false, max_bars_back = 1000, max_lines_count=500, max_labels_count=500)
+
+// vars
+
+var posCondTEMAEMA = false
+var negCondTEMAEMA = false
+var posCondPriceBB = false
+var negCondPriceBB = false
+var posCondPriceTEMA = false
+var negCondPriceTEMA = false
+var posCondTDI = false
+var negCondTDI = false
+var CondGcross = false
+var CondDcross = false
+var almostCross = false
+
+CondTEMAEMA = 'na'
+CondCross = 'na'
+var CondPriceBB = 'na'
+var CondPriceTEMA = 'na'
+var CondTDI = 'na'
+
+
+var ImpOneUp_prev = false
+var ImpOneDown_prev = false
+
+var BBrsiFillColor = color.black
+var RSIplColor = color.yellow
+
+var diff = 0.00000
+
+//-------------------- Custom Functions
+
+reso = input.timeframe('', 'Resolution')
+
+RSIperiod = input.int(13, minval=1, title='TDI: RSI Period')
+BBandLength = input.int(34, minval=1, title='TDI: RSI Bolinger Band Length')
+RSImaFastLength = input.int(2, minval=2, title='TDI: Fast MA on RSI')
+RSImaSlowLength = input.int(7, minval=7, title='TDI: Slow MA on RSI')
+TEMALength = input.int(100, minval=50, title='TEMA: Length')
+EMAslowLength = input.int(200, minval=50, title='EMA Slow: Length')
+holding_p = input.int(10, 'Holding Period |1..n|', minval=1)
+
+lot_size = input.float(0.01, 'Lot Size', options=[0.01, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 1000])
+
+long_position_avg_price = 0.000000
+short_position_avg_price = 0.000000
+
+// = (open + close + high + low) / 4
+src = ohlc4  // Source of Calculations (Close of Bar)
+//src = close
+//
+CloseRSI = ta.rsi(src, RSIperiod)  // RSI of Close
+ma_cur = ta.sma(CloseRSI, BBandLength)  // Moving Average of RSI [current]
+offs = 1.6185 * ta.stdev(CloseRSI, BBandLength)  // Offset
+BBupRSI = ma_cur + offs  // Upper B bands
+BBlowRSI = ma_cur - offs  // Lower B bands
+
+RSIfastMA = ta.sma(CloseRSI, RSImaFastLength)  // Moving Average of RSI 2 bars back
+RSIslowMA = ta.sma(CloseRSI, RSImaSlowLength)  // Moving Average of RSI 7 bars back
+
+BBupRSIPL = plot(BBupRSI, 'Upper RSI Bolinger Band', color=color.new(color.blue, 0), linewidth=2)  // uppe B band
+BBlowRSIPL = plot(BBlowRSI, 'Lower RSI Bolinger Band', color=color.new(color.blue, 0), linewidth=2)  // Lower B band
+
+mid = (BBupRSI + BBlowRSI) / 2  // Average of BBupRSI and Lower B bands
+rsiBBmidl = plot(mid, "Middle of Bolinger bands", color = color.white, linewidth = 1)      // Middle of B bands
+
+//plot(RSIslowMA, "Slow MA", color = #00AB08, linewidth=2)                       // Plot Slow MA
+//plot(RSIfastMA, "Fast MA", color = #ff0000, linewidth=2)                         // Plot Fast MA
+
+//RSI PLOT
+
+RSIplColor := color.yellow
+BBrsiFillColor := color.black
+//
+
+varip int barsc = -1
+barsc := barsc + 1
+
+varip bars_long = 0
+varip bars_short = 0
+
+
+// Breakout out of the B Bands for RSI
+if CloseRSI[1] >= BBupRSI[1] or ta.crossover(CloseRSI, BBupRSI)
+    posCondTDI := true
+    negCondTDI := false
+    RSIplColor := color.lime
+    BBrsiFillColor := color.lime
+if CloseRSI[1] <= BBlowRSI[1] or ta.crossunder(CloseRSI, BBlowRSI)
+    posCondTDI := false
+    negCondTDI := true
+    RSIplColor := color.red
+    BBrsiFillColor := color.red
+
+rsiPlot = plot(CloseRSI, title='RSI', color=RSIplColor, linewidth=2, transp=0)
+
+fill(BBupRSIPL, rsiPlot, color=BBrsiFillColor, transp=70)
+fill(BBlowRSIPL, rsiPlot, color=BBrsiFillColor, transp=70)
+
+
+// EMAslow and TEMA
+
+xPrice = close
+xEMA1 = ta.ema(xPrice, TEMALength)
+xEMA2 = ta.ema(xEMA1, TEMALength)
+xEMA3 = ta.ema(xEMA2, TEMALength)
+TEMA = 3 * xEMA1 - 3 * xEMA2 + xEMA3
+
+exponential = input(true, title='Exponential MA')
+
+slowEMA = exponential ? ta.ema(src, EMAslowLength) : ta.sma(src, EMAslowLength)
+
+if TEMA > slowEMA
+    posCondTEMAEMA := true 
+    negCondTEMAEMA := false
+else
+    posCondTEMAEMA := false
+    
+if TEMA < slowEMA
+    posCondTEMAEMA := false
+    negCondTEMAEMA := true
+else
+
+    negCondTEMAEMA := false
+
+plotchar(posCondTEMAEMA, char='.', color=color.lime, location=location.top, size=size.tiny)
+plotchar(negCondTEMAEMA, char='.', color=color.red, location=location.top, size=size.tiny)
+
+// Cross finding
+
+//( abs(160-161)/((160+161)/2) )*100
+
+var dcolor = color.new(color.blue, 0)
+almostCross := false
+
+if TEMA > slowEMA
+    diff := ((TEMA-slowEMA)/((TEMA+slowEMA)/2))*100
+if TEMA < slowEMA
+    diff := ((slowEMA-TEMA)/((TEMA+slowEMA)/2))*100
+
+if  diff < 0.19999 and diff > 0.00099
+    almostCross := true
+    dcolor := color.white
+else 
+    almostCross := false
+    dcolor := color.blue
+    
+//plotshape(almostCross, color=color.yellow, location=location.top, style=shape.xcross, size=size.tiny, transp=50)
+//plot (diff,title="TEMA and EMA diff", color=dcolor)
+
+// G&D cross
+
+gCross = ta.crossover(TEMA, slowEMA)
+dCross = ta.crossunder(TEMA, slowEMA) 
+
+
+if gCross
+    CondGcross := true
+    CondDcross := false
+else
+    CondGcross := false
+
+if dCross
+    CondDcross := true
+    CondGcross := false
+else
+    CondDcross := false
+
+plotshape(CondGcross, color=color.lime, location=location.top, style=shape.xcross, size=size.tiny)
+plotshape(CondDcross, color=color.red, location=location.top, style=shape.xcross, size=size.tiny)
+
+
+// Price action main BB
+
+ChartLength = input.int(20, minval=1, title="BB for chart length")
+mult = input.float(2.0, minval=0.001, maxval=50, title="BB for Price StdDev")
+basis = ta.sma(src, ChartLength)
+dev = mult * ta.stdev(src, ChartLength)
+chartBBup = basis + dev
+chartBBlow = basis - dev
+
+// Breakout out of the B Bands for price
+
+if src >= chartBBup[1] or ta.crossover(src[1], chartBBup[1])
+    posCondPriceBB := true
+    negCondPriceBB := false
+else     
+    posCondPriceBB := false
+    
+if src <= chartBBlow[1] or ta.crossunder(src[1], chartBBlow[1])
+    posCondPriceBB := false
+    negCondPriceBB := true
+else    
+    negCondPriceBB := false
+
+plotshape(posCondPriceBB, color=color.lime, location=location.abovebar, style=shape.circle, size=size.tiny)
+plotshape(negCondPriceBB, color=color.red, location=location.belowbar, style=shape.circle, size=size.tiny)    
+
+
+// Breakout out of the Tema for price
+
+//if src >= TEMA or 
+if ta.crossover(src[1], TEMA[1])
+    posCondPriceTEMA := true
+    negCondPriceTEMA := false
+else     
+    posCondPriceTEMA := false
+
+//if src <= TEMA or 
+if ta.crossunder(src[1], TEMA[1])
+    negCondPriceTEMA := true
+    posCondPriceTEMA := false    
+else    
+    negCondPriceTEMA := false
+
+
+plotchar(posCondPriceTEMA, char='o', color=color.lime, location=location.top, size=size.tiny)
+plotchar(negCondPriceTEMA, char='o', color=color.red, location=location.top, size=size.tiny)
+
+
+ImpOneUp = false
+ImpOneDown = false
+ImpColor = color.black
+
+
+startLongTrade = false
+startShortTrade = false
+endLongTrade = true
+endShortTrade = true
+
+
+// 1st impulse up
+if posCondTDI == true and posCondTDI[1] == false
+    CondTDI := 'up'
+if posCondPriceTEMA == true and posCondPriceTEMA[1] == false
+    CondPriceTEMA := 'up'
+if posCondTEMAEMA == true and posCondTEMAEMA[1] == false
+    CondTEMAEMA := 'up'
+if posCondPriceBB == true and posCondPriceBB[1] == false
+    CondPriceBB := 'up'
+if CondGcross  == true and CondGcross[1] == false
+    CondCross := 'G-Cross'
+
+if ImpOneUp_prev != true
+    if CondTDI == 'up' and CondPriceTEMA == 'up' and CondTEMAEMA == 'up' and CondPriceBB == 'up' and CondCross == 'G-Cross' 
+        ImpOneUp := true
+        ImpColor := color.lime
+        startLongTrade := true
+        endShortTrade := true
+        position_avg_price 
+    else
+        ImpOneUp := false
+        ImpColor := color.black    
+
+ImpOneUp_prev := ImpOneUp
+
+plotshape(startLongTrade, color=ImpColor, location=location.abovebar, style=shape.labelup, size=size.small)
+
+if startLongTrade
+    bars_long := bars_long + 1
+
+
+// 1st impulse down
+if negCondTDI == true and negCondTDI[1] == false
+    CondTDI := 'down'
+if negCondPriceTEMA == true and negCondPriceTEMA[1] == false
+    CondPriceTEMA := 'down'
+if negCondTEMAEMA == true and negCondTEMAEMA[1] == false
+    CondTEMAEMA := 'down'
+if negCondPriceBB == true and negCondPriceBB[1] == false
+    CondPriceBB := 'down'
+if CondDcross  == true and CondDcross[1] == false
+    CondCross := 'D-Cross'
+
+if ImpOneDown_prev != true
+    if CondTDI == 'down' and CondPriceTEMA == 'down' and CondTEMAEMA =='down' and CondPriceBB == 'down' and CondCross == 'D-Cross'  
+        ImpOneDown := true
+        ImpColor := color.red
+        startShortTrade := true
+        endLongTrade := true        
+        
+    else
+        ImpOneDown := false
+        ImpColor := color.black    
+
+ImpOneDown_prev := ImpOneDown
+
+plotshape(startShortTrade, color=ImpColor, location=location.abovebar, style=shape.labeldown, size=size.small)
+
+if startShortTrade
+    bars_short := bars_short + 1
+
+
+// alerting
+
+if ImpOneUp[1] == false and ImpOneUp == true and startLongTrade[1] == false
+    startLongTrade := true
+    endShortTrade := true
+
+//plotshape(endLongTrade, color=color.lime, location=location.bottom, style=shape.flag, size=size.tiny, transp=50)
+
+if ImpOneDown[1] == false and ImpOneDown == true and startShortTrade[1] == false
+    startShortTrade := true
+    endLongTrade := true
+
+//plotshape(endShortTrade, color=color.red, location=location.bottom, style=shape.flag, size=size.tiny, transp=50)
+
+
+
+
+//******************Exit Conditions******************************
+// Profit and Loss Exit Calculations
+//User Options to Change Inputs 
+//Does user want to run a Trailing Stop
+
+trailStop_YN = input.string(title='Run a Trailing Stop', defval='N', options=['Y', 'N'])
+TrailPerc = input.float(title='Trail Loss %', minval=0, step=1, defval=6) / 100
+
+// User Options to Change Inputs (%)
+stopPer = input.float(15, title='Stop Loss %') / 100
+takePer = input.float(25, title='Take Profit %') / 100
+
+//calculate Trail stop price for MD_EMA TGT% condition
+longStopPrice = 0.0  //long side entry stop variable
+longStopPrice := if lot_size > 0
+    stopLongValue = close * (1 - TrailPerc)
+    math.max(stopLongValue, longStopPrice[1])
+else
+    0
+
+shortStopPrice = 0.0  //short side entry stop variable
+shortStopPrice := if lot_size > 0
+    shortStopValue = close * (1 + TrailPerc)
+    math.min(shortStopValue, shortStopPrice[1])
+else
+    999999
+
+// Determine where you've entered and in what direction
+longStop = strategy.position_avg_price * (1 - stopPer)
+shortStop = strategy.position_avg_price * (1 + stopPer)
+shortTake = strategy.position_avg_price * (1 - takePer)
+longTake = strategy.position_avg_price * (1 + takePer)
+
+
+
+
+
+//
+//-------------------- Backtesting (TODO)
+
+ohl4 = (open[1] + close[1] + high[1] + low[1]) / 4
+//ohl4 = ohlc4
+
+var float start_long_trade = 0.
+var float long_trades = 0.
+var float start_short_trade = 0.
+var float short_trades = 0.
+var int wins_long = 0
+var int wins_short = 0
+var int long_trade_count = 0
+var int short_trade_count = 0
+
+if startLongTrade
+    start_long_trade := ohl4
+    start_long_trade
+
+if endLongTrade
+    long_trade_count := 1
+    diff_long = ohl4 - start_long_trade
+    wins_long := diff_long > 0 ? 1 : 0
+    long_trades := diff_long * lot_size
+    long_trades
+    
+if startShortTrade
+    start_short_trade := ohl4
+    start_short_trade
+
+if endShortTrade
+    short_trade_count := 1
+    diff_short = start_short_trade - ohl4
+    wins_short := diff_short > 0 ? 1 : 0
+    short_trades := diff_short * lot_size
+    short_trades
+
+cumreturn_long = ta.cum(long_trades)  //-- cumulative return long
+cumreturn_short = ta.cum(short_trades)  //-- cumulative return short
+total_long_trades = ta.cum(long_trade_count)
+total_short_trades = ta.cum(short_trade_count)
+total_wins_long = ta.cum(wins_long)
+total_wins_short = ta.cum(wins_short)
+total_losses_long = total_long_trades - total_wins_long == 0 ? 1 : total_long_trades - total_wins_long
+total_losses_short = total_short_trades - total_wins_short == 0 ? 1 : total_short_trades - total_wins_short
+
+
+//-------------------- Information
+
+show_info = input(true, 'Show Info?')
+
+var label lbl = na
+
+tbase = (time - time[1]) / 1000
+tcurr = (timenow - time_close[1]) / 1000
+
+//    info = 'Info:\n'+ '\nImpOneUp:'+str.tostring(ImpOneUp)+ '\nImpOneUp:'+str.tostring(ImpOneUp)+ '\nCondPriceTEMA:'+CondPriceTEMA+'\nCondTEMAEMA:'+CondTEMAEMA+'\nCondPriceBB:'+CondPriceBB+'\nCondCross:'+CondCross
+
+info = '\nCR Long='+str.tostring(cumreturn_long,'#.#') + '\nTrades long: ' + str.tostring(total_long_trades,'#')+'\nWin/Loss: '+ str.tostring(total_wins_long/total_losses_long,'#.##')+'\nWinrate Long: '+str.tostring(total_wins_long/total_long_trades,'#.#%')
+       +'\nCR Short='+str.tostring(cumreturn_short,'#.#') + '\nTrades Short: ' + str.tostring(total_short_trades,'#')+'\nWin/Loss: '+ str.tostring(total_wins_short/total_losses_short,'#.##')+'\nWinrate Short: '+str.tostring(total_wins_short/total_short_trades,'#.#%') 
+       + '\n\nBar Time: ' + str.tostring(tcurr / tbase, '#.#%') + '\nBars: ' + str.tostring(barsc,'#')
+
+if show_info and barstate.islast 
+    lbl := label.new(bar_index, 30, info, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_left, color.white, size.small, text.align_left)
+    label.delete(lbl[1])
+
+    
