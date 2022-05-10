@@ -1,0 +1,174 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+strategy(title='_testing', commission_type=strategy.commission.percent, commission_value=0.003, 
+         default_qty_value=5000, default_qty_type=strategy.fixed, initial_capital=10000,  currency=currency.USD,  overlay=false, 
+         pyramiding=0, calc_on_order_fills=true, calc_on_every_tick=true, precision=8, max_labels_count=200, max_bars_back=5000)
+// STEP 1:
+// Make input options that configure backtest date range
+startDate = input(title="Start Date", type=input.integer,
+     defval=1, minval=1, maxval=31)
+startMonth = input(title="Start Month", type=input.integer,
+     defval=11, minval=1, maxval=12)
+startYear = input(title="Start Year", type=input.integer,
+     defval=2021, minval=2021, maxval=2022)
+
+endDate = input(title="End Date", type=input.integer,
+     defval=1, minval=1, maxval=31)
+endMonth = input(title="End Month", type=input.integer,
+     defval=2, minval=1, maxval=12)
+endYear = input(title="End Year", type=input.integer,
+     defval=2022, minval=2021, maxval=2023)
+
+// STEP 2:
+// Look if the close time of the current bar
+// falls inside the date range
+inDateRange = (time >= timestamp(syminfo.timezone, startYear,
+         startMonth, startDate, 0, 0)) and
+     (time < timestamp(syminfo.timezone, endYear, endMonth, endDate, 0, 0))
+
+
+// Polarized Fractal Efficiency
+
+// Description:
+
+// Technically, Polarized Fractal Efficiency (PFE) is a measure of market 
+// choppiness. It is an indicator derived from fractal geometry, the 
+// mathematics that describes chaotic systems.
+
+// This technical indicator was developed by Hans Hannula to determine price 
+// efficiency over a user-defined period. This indicator fluctuates between 
+// -100 and +100, with 0 as the centerline. Securities with a PFE 
+// greater than zero are deemed to be trending up, while a reading of 
+// less than zero indicates the trend is down. Polarized Fractal 
+// Efficiency's signature characteristic is its use of fractal geometry 
+// in determining how efficiently a security's price is moving.
+
+// This script uses a customized version of PFE formula and generates a long  
+// entry signal when the Polarized Fractional Efficiency (PFE) value crosses  
+// over a signal line, and/or generates a short entry signal when the PFE  
+// value crosses under a signal line.
+
+// The Polarized Fractional Efficiency indicator can be used to determine
+// price efficiency over a user-defined time period. Assets with a PFE  
+// greater than zero are deemed to be trending up, while a reading of less 
+// than zero indicates the trend is down. The strengh of the trend is  
+// measured by the position of the PFE relative to the zero line. 
+
+// As a general rule, the further the PFE value is away from zero, 
+// the stronger and more efficient the given trend is. A PFE value that 
+// fluctuates around the zero line could indicate that the supply and 
+// demand for the security are in balance and price may trade sideways.
+
+// Optional setup: try out InsideOut with 5 lag
+
+
+//-------------------- Inputs
+
+ptype  = input('Close',  'Price Type',              options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+lag    = input(3,       'Indicator Lag |3..n|',    minval=3)
+m      = input(1,        'Smoothing Period |1..n|', minval=1)
+method = input('Center', 'Signal Method',           options=['Center','InsideOut'])
+bound  = input(1.0,     'Bounds |0.0..100.0|',     minval=0.0)
+ftype  = input('Volume',   'Filter Signals by',       options=['Volatility','Volume','Both','None'])
+
+//-------------------- System Variables
+
+var int BUY  =  1
+var int SELL = -1
+var int HOLD =  0
+
+//-------------------- Series
+
+var bool long   = 0.0
+var bool short  = 0.0
+var int  signal = HOLD
+
+//-------------------- Custom Functions
+
+pfe(ds, lag, smooth) =>  //-- Polarized Fractal Efficiency (custom version!)
+    x   = sqrt(pow(ds - ds[lag], 2) + pow(lag, 2))
+    y   = sum(sqrt(pow(ds - ds[lag], 2) + 1), lag-2)
+    pct = 100 * x / y
+    pct_corr = ds < ds[1] ? -pct : pct
+    ema(pct_corr, smooth)
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 14)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+base =  ptype=='Open'  ? open 
+      : ptype=='High'  ? high
+      : ptype=='Low'   ? low
+      : ptype=='Close' ? close
+      : ptype=='OC2'   ? (open+close)/2 
+      : ptype=='HL2'   ? hl2 
+      : ptype=='OHL3'  ? (open+high+low)/3 
+      : ptype=='HLC3'  ? hlc3 
+      :                  ohlc4
+
+filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
+         : ftype=='Volume'     ? volumeBreak(30) 
+         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(30)
+         :                       true
+
+pfevalue = pfe(base, lag, m)
+
+
+if method=='Center'
+	long  := crossover(pfevalue,  HOLD) 
+	short := crossunder(pfevalue, HOLD) 
+else
+    if method=='InsideOut'
+	    long  := crossover(pfevalue,   bound) 
+	    short := crossunder(pfevalue, -bound) 
+    else 
+        if method=='OutsideIn'
+	        long  := crossunder(pfevalue, bound) 
+	        short := crossover(pfevalue, -bound) 
+
+signal := long and filter ? BUY : short and filter ? SELL : nz(signal[1])
+
+changed = change(signal)
+
+startLongTrade  = changed and signal==BUY
+startShortTrade = changed and signal==SELL
+endLongTrade    = changed and signal==SELL
+endShortTrade   = changed and signal==BUY
+
+//-------------------- Visualization
+
+hline(HOLD)
+hline(bound)
+hline(-bound)
+plot(pfevalue)
+
+plotshape(startLongTrade  ? -bound : na, 'Buy',  shape.labelup,   location.absolute, color.blue, size=size.tiny) 
+plotshape(startShortTrade ?  bound : na, 'Sell', shape.labeldown, location.absolute, color.red,  size=size.tiny) 
+plot(endLongTrade         ? HOLD   : na, 'ExitBuy',  color.blue, 2, plot.style_cross)
+plot(endShortTrade        ? HOLD   : na, 'ExitSell', color.red,  2, plot.style_cross)
+
+// STEP 3:
+// Submit entry orders, but only when bar is inside date range
+
+strategy.entry(id="Enter Long", long=true, when=(startLongTrade and endShortTrade and inDateRange))
+strategy.close(id="Exit Long", when=(endLongTrade and startShortTrade and inDateRange))
+strategy.entry(id="Enter Short", long=false, when=(startShortTrade and endLongTrade and inDateRange))
+strategy.close(id="Exit Short", when=(startLongTrade and endShortTrade and inDateRange))
+
+
+// STEP 4:
+// Exit open market position when date range ends
+if (not inDateRange)
+    strategy.close_all()
+    
