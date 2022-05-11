@@ -49,22 +49,22 @@ indicator('Machine Learning: Logistic Regression v5', '', true, max_bars_back = 
 // Style tags: Trend Following, Trend Analysis
 // Asset class: Equities, Futures, ETFs, Currencies and Commodities
 // Dataset: FX Minutes/Hours++/Days
-
 //-------------------- Inputs
 
 
-ptype = input.string('Close', 'Price Type', options=['Open', 'High', 'Low', 'Close', 'HL2', 'OC2', 'OHL3', 'HLC3', 'OHLC4'])
+ptype = input.string('OHLC4', 'Price Type', options=['Open', 'High', 'Low', 'Close', 'HL2', 'OC2', 'OHL3', 'HLC3', 'OHLC4'])
 
 reso = input.timeframe('', 'Resolution')
 lookback = input.int(2, 'Lookback Window Size |2..n| (2)', minval=2)
 nlbk = input.int(2, 'Normalization Lookback |2..240| (120)', minval=2, maxval=240)
-lrate = input.float(0.004, 'Learning Rate |0.0001..0.01|', minval=0.0001, maxval=0.01, step=0.0001)
-iterations = input.int(500, 'Training Iterations |50..20000|', minval=50)
+lrate = input.float(0.001, 'Learning Rate |0.0001..0.01|', minval=0.0001, maxval=0.01, step=0.0001)
+iterations = input.int(2000, 'Training Iterations |50..20000|', minval=50)
 ftype = input.string('Both', 'Filter Signals by', options=['Volatility', 'Volume', 'Both', 'None'])
 curves = input(true, 'Show Loss & Prediction Curves?')
-easteregg = input(false, 'Optional Calculation?')
+easteregg = input(true, 'Optional Calculation?')
 useprice = input(true, 'Use Price Data for Signal Generation?')
-holding_p = input.int(20, 'Holding Period |1..n|', minval=1)
+startYear = input.int(2022, 'Start Year |2000..n|', minval=2000)
+holding_p = input.int(5, 'Holding Period |1..n|', minval=1)
 
 
 //-------------------- System Variables
@@ -77,10 +77,6 @@ var hp_counter = 0
 
 //-------------------- Custom Functions
 
-cAqua(g) =>
-    g > 9 ? #0080FFff : g > 8 ? #0080FFe5 : g > 7 ? #0080FFcc : g > 6 ? #0080FFb2 : g > 5 ? #0080FF99 : g > 4 ? #0080FF7f : g > 3 ? #0080FF66 : g > 2 ? #0080FF4c : g > 1 ? #0080FF33 : #00C0FF19
-cPink(g) =>
-    g > 9 ? #FF0080ff : g > 8 ? #FF0080e5 : g > 7 ? #FF0080cc : g > 6 ? #FF0080b2 : g > 5 ? #FF008099 : g > 4 ? #FF00807f : g > 3 ? #FF008066 : g > 2 ? #FF00804c : g > 1 ? #FF008033 : #FF008019
 
 volumeBreak(thres) =>
     rsivol = ta.rsi(volume, 14)
@@ -116,8 +112,11 @@ minimax(ds, p, min, max) =>  // normalize to price
 //-------------------- Logic
 
 ds = ptype == 'Open' ? open : ptype == 'High' ? high : ptype == 'Low' ? low : ptype == 'Close' ? close : ptype == 'HL2' ? (high + low) / 2 : ptype == 'OC2' ? (open + close) / 2 : ptype == 'OHL3' ? (open + high + low) / 3 : ptype == 'HLC3' ? (high + low + close) / 3 : (open + high + low + close) / 4
-
 src = ds
+
+basePrice = input(false, 'Use Base Price?')
+
+ubase = basePrice ? (open + close + high + low) / 4 : src
 
 
 base_ds = request.security('', reso, ds[barstate.ishistory ? 0 : 1], gaps=barmerge.gaps_on, lookahead=barmerge.lookahead_off )
@@ -132,33 +131,26 @@ scaled_prediction = minimax(prediction, nlbk, ta.lowest(base_ds, nlbk), ta.highe
 
 filter = ftype == 'Volatility' ? volatilityBreak(1, 10) : ftype == 'Volume' ? volumeBreak(49) : ftype == 'Both' ? volatilityBreak(1, 10) and volumeBreak(49) : true
 
-signal := useprice ? base_ds < scaled_loss and filter ? SELL : base_ds > scaled_loss and filter ? BUY : nz(signal[1]) : ta.crossunder(scaled_loss, scaled_prediction) and filter ? SELL : ta.crossover(scaled_loss, scaled_prediction) and filter ? BUY : nz(signal[1])
+//==
+if year(time) >= startYear
+    signal := useprice ? base_ds < scaled_loss and filter ? SELL : base_ds > scaled_loss and filter ? BUY : nz(signal[1]) : ta.crossunder(scaled_loss, scaled_prediction) and filter ? SELL : ta.crossover(scaled_loss, scaled_prediction) and filter ? BUY : nz(signal[1])
+    signal
 
 changed = ta.change(signal)
-
 hp_counter := changed ? 0 : hp_counter + 1
+
 
 startLongTrade = changed and signal == BUY
 startShortTrade = changed and signal == SELL
-endLongTrade = signal == BUY and hp_counter == holding_p and not changed or changed and signal == SELL
-endShortTrade = signal == SELL and hp_counter == holding_p and not changed or changed and signal == BUY
+    
+endLongTrade = changed and signal == SELL or signal == BUY and hp_counter == holding_p and not changed
+endShortTrade = changed and signal == BUY or signal == SELL and hp_counter == holding_p and not changed
+
 
 //-------------------- Rendering
 
 plot(curves ? scaled_loss : na, '', color.new(color.yellow, 0), 1)
 plot(curves ? scaled_prediction : na, '', color.new(color.lime, 0), 1)
-
-
-//-------------------- Alerting
-
-alertcondition(startLongTrade, title="Alert: Buy", message="ML-LR: Buy!\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")
-alertcondition(startShortTrade, title="Alert: Sell", message="ML-LR: Sell!\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")
-
-alertcondition(endLongTrade, title="Alert: Exit Buy", message="ML-LR: Exit Buy\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")
-alertcondition(endShortTrade, title="Alert: Exit Sell", message="ML-LR: Exit Sell\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")
-
-
-//------------------ Rendering
 
 plotshape(startLongTrade ? src : na, 'Buy', shape.triangleup, location.belowbar, color.new(color.lime, 0), size=size.tiny)
 plotshape(startShortTrade ? src : na, 'Sell', shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.tiny)
@@ -168,10 +160,9 @@ plotshape(endShortTrade ? src : na, 'StopSell', shape.flag, location.bottom, col
 
 //-------------------- Backtesting
 
-lot_size = input.float(1, 'Lot Size', options=[0.01, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 1000])
 
-//src = (open[1] + close[1] + high[1] + low[1]) / 4
-src := ohlc4
+lot_size = input.float(1, 'Lot Size', options=[0.01, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 1000])
+show_info = input(true, 'Show Info?')
 
 var float start_long_trade = 0.
 var float long_trades = 0.
@@ -183,23 +174,23 @@ var int long_trade_count = 0
 var int short_trade_count = 0
 
 if startLongTrade
-    start_long_trade := src
+    start_long_trade := ubase
     start_long_trade
 
 if endLongTrade
     long_trade_count := 1
-    diff_long = src - start_long_trade
+    diff_long = ubase - start_long_trade
     wins_long := diff_long > 0 ? 1 : 0
     long_trades := diff_long * lot_size
     long_trades
     
 if startShortTrade
-    start_short_trade := src
+    start_short_trade := ubase
     start_short_trade
 
 if endShortTrade
     short_trade_count := 1
-    diff_short = start_short_trade - src
+    diff_short = start_short_trade - ubase
     wins_short := diff_short > 0 ? 1 : 0
     short_trades := diff_short * lot_size
     short_trades
@@ -216,17 +207,31 @@ total_losses_short = total_short_trades - total_wins_short == 0 ? 1 : total_shor
 
 //-------------------- Information
 
-show_info = input(true, 'Show Info?')
-
 tbase = (time - time[1]) / 1000
 tcurr = (timenow - time_close[1]) / 1000
 
 var label lbl = na
+info = '\n  HPeriod: ' + str.tostring(holding_p, '#')
+     +'\n\n  CR Long: '+str.tostring(cumreturn_long,'#.#')
+       +'\n  Trades long: ' + str.tostring(total_long_trades,'#')
+       +'\n  Win/Loss: '+ str.tostring(total_wins_long/total_losses_long,'#.##')
+       +'\n  Winrate Long: '+str.tostring(total_wins_long/total_long_trades,'#.#%')
+     +'\n\n  CR Short: '+str.tostring(cumreturn_short,'#.#')
+       +'\n  Trades Short: ' + str.tostring(total_short_trades,'#')
+       +'\n  Win/Loss: '+ str.tostring(total_wins_short/total_losses_short,'#.##')
+       +'\n  Winrate Short: '+str.tostring(total_wins_short/total_short_trades,'#.#%') 
+     +'\n\n  Bar Time: ' + str.tostring(tcurr / tbase, '#.#%')
 
-info = '\nCR Long='+str.tostring(cumreturn_long,'#.#') + '\nTrades long: ' + str.tostring(total_long_trades,'#')+'\nWin/Loss: '+ str.tostring(total_wins_long/total_losses_long,'#.##')+'\nWinrate Long: '+str.tostring(total_wins_long/total_long_trades,'#.#%')
-       +'\nCR Short='+str.tostring(cumreturn_short,'#.#') + '\nTrades Short: ' + str.tostring(total_short_trades,'#')+'\nWin/Loss: '+ str.tostring(total_wins_short/total_losses_short,'#.##')+'\nWinrate Short: '+str.tostring(total_wins_short/total_short_trades,'#.#%') 
-       + '\n\nBar Time: ' + str.tostring(tcurr / tbase, '#.#%')
 
 if show_info and barstate.islast 
-    lbl := label.new(bar_index, src, info, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_left, color.white, size.small, text.align_left)
+    lbl := label.new(bar_index, ubase, info, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_left, color.white, size.small, text.align_left)
     label.delete(lbl[1])
+
+
+//-------------------- Alerting
+
+alertcondition(startLongTrade, title="Alert: Buy", message="ML-LR: Buy!\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")
+alertcondition(startShortTrade, title="Alert: Sell", message="ML-LR: Sell!\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")
+
+alertcondition(endLongTrade, title="Alert: Exit Buy", message="ML-LR: Exit Buy\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")
+alertcondition(endShortTrade, title="Alert: Exit Sell", message="ML-LR: Exit Sell\nSymbol: {{exchange}}:{{ticker}}\nPrice: {{close}}")

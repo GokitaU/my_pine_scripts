@@ -2,7 +2,7 @@
 // © capissimo
 
 //@version=5
-indicator('ML kNN-based Strategy v5', '', true, max_bars_back = 5000, max_lines_count=400, max_labels_count=400)
+indicator('ML: kNN-based Strategy v5', '', true, max_bars_back = 1000, max_lines_count=200, max_labels_count=200)
 
 // kNN-based Strategy (FX and Crypto)
 // Description: 
@@ -42,6 +42,8 @@ indicator('ML kNN-based Strategy v5', '', true, max_bars_back = 5000, max_lines_
 // Dataset: FX Minutes/Hours+++/Days
 
 //-------------------- Inputs
+ptype = input.string('OHLC4', 'Price Type', options=['Open', 'High', 'Low', 'Close', 'HL2', 'OC2', 'OHL3', 'HLC3', 'OHLC4'])
+
 
 K = input.int(63, 'K Value for kNN Model |5..n|', minval=5)
 ind = input.string('All', 'Indicator', options=['RSI', 'ROC', 'CCI', 'MOM', 'All'])
@@ -49,6 +51,7 @@ fast = input.int(14, 'Fast Period |1..n|', minval=1)
 slow = input.int(28, 'Slow Period |2..n|', minval=2)
 ftype = input.string('Both', 'Filter Signals by', options=['Volatility', 'Volume', 'Both', 'None'])
 holding_p = input.int(1, 'Holding Period |1..n|', minval=1)
+startYear = input.int(2022, 'Start Year |2000..n|', minval=2000)
 tthres = input.float(99.9, 'Time Threshold |0.1..100.0|', minval=0.0, maxval=100.0, step=0.1)
 
 //-------------------- Global Variables
@@ -62,10 +65,6 @@ var float k = math.floor(math.sqrt(K))
 
 //-------------------- Custom Functions
 
-cAqua(g) =>
-    g > 9 ? #0080FFff : g > 8 ? #0080FFe5 : g > 7 ? #0080FFcc : g > 6 ? #0080FFb2 : g > 5 ? #0080FF99 : g > 4 ? #0080FF7f : g > 3 ? #0080FF66 : g > 2 ? #0080FF4c : g > 1 ? #0080FF33 : #00C0FF19
-cPink(g) =>
-    g > 9 ? #FF0080ff : g > 8 ? #FF0080e5 : g > 7 ? #FF0080cc : g > 6 ? #FF0080b2 : g > 5 ? #FF008099 : g > 4 ? #FF00807f : g > 3 ? #FF008066 : g > 2 ? #FF00804c : g > 1 ? #FF008033 : #FF008019
 
 volumeBreak(thres) =>
     rsivol = ta.rsi(volume, 14)
@@ -79,19 +78,24 @@ scale(x, p) =>  //-- scale to the range of [0..1]
     (x - ta.lowest(x, p)) / (ta.highest(x, p) - ta.lowest(x, p))
 
 //-------------------- Logic
+src = ptype == 'Open' ? open : ptype == 'High' ? high : ptype == 'Low' ? low : ptype == 'Close' ? close : ptype == 'HL2' ? (high + low) / 2 : ptype == 'OC2' ? (open + close) / 2 : ptype == 'OHL3' ? (open + high + low) / 3 : ptype == 'HLC3' ? (high + low + close) / 3 : (open + high + low + close) / 4
+
+basePrice = input(false, 'Use Base Price?')
+ubase = basePrice ? (open + close + high + low) / 4 : src
+
 
 // 4 pairs of predictor indicators, long and short each
-rs = ta.rsi(close, slow)
-rf = ta.rsi(close, fast)
-cs = ta.cci(close, slow)
-cf = ta.cci(close, fast)
-os = ta.roc(close, slow)
-of = ta.roc(close, fast)
+rs = ta.rsi(src, slow)
+rf = ta.rsi(src, fast)
+cs = ta.cci(src, slow)
+cf = ta.cci(src, fast)
+os = ta.roc(src, slow)
+of = ta.roc(src, fast)
 // added mom as a feature: 
 // it requires scaling to the range of [0,...,100]
 // the choice of 63 is arbitrary, needs optimizing
-ms = scale(ta.mom(close, slow), 63) * 100
-mf = scale(ta.mom(close, fast), 63) * 100
+ms = scale(ta.mom(src, slow), 63) * 100
+mf = scale(ta.mom(src, fast), 63) * 100
 
 // TOADD or TOTRYOUT:
 //    cmo(close, slow), cmo(close, fast)
@@ -101,7 +105,7 @@ f1 = ind == 'RSI' ? rs : ind == 'ROC' ? os : ind == 'CCI' ? cs : ind == 'MOM' ? 
 f2 = ind == 'RSI' ? rf : ind == 'ROC' ? of : ind == 'CCI' ? cf : ind == 'MOM' ? mf : math.avg(rf, of, cf, mf)
 
 // Classification data, what happens on the next bar
-class_1 = close[1] < close[0] ? SELL : close[1] > close[0] ? BUY : HOLD
+class_1 = src[1] < src[0] ? SELL : src[1] > src[0] ? BUY : HOLD
 
 // Training data, normalized to the range of [0,...,100]
 var feature1 = array.new_float(0)  // [0,...,100]
@@ -168,16 +172,20 @@ barlife = tcurr / tbase
 
 filter = ftype == 'Volatility' ? volatilityBreak(1, 10) : ftype == 'Volume' ? volumeBreak(49) : ftype == 'Both' ? volatilityBreak(1, 10) and volumeBreak(49) : true
 
-signal := prediction > 0 and barlife > tthres and filter ? BUY : prediction < 0 and barlife > tthres and filter ? SELL : nz(signal[1])  // HOLD
+//==
+if year(time) >= startYear
+    signal := prediction > 0 and barlife > tthres and filter ? BUY : prediction < 0 and barlife > tthres and filter ? SELL : nz(signal[1])  // HOLD
+    signal
 
 changed = ta.change(signal)
-
 hp_counter := changed ? 0 : hp_counter + 1
 
 startLongTrade = changed and signal == BUY
 startShortTrade = changed and signal == SELL
+
 endLongTrade = changed and signal == SELL or signal == BUY and hp_counter == holding_p and not changed
 endShortTrade = changed and signal == BUY or signal == SELL and hp_counter == holding_p and not changed
+
 
 //------------------ Rendering
 
@@ -191,8 +199,6 @@ plotshape(endShortTrade ? src : na, 'StopSell', shape.flag, location.bottom, col
 
 lot_size = input.float(1, 'Lot Size', options=[0.01, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 1000])
 
-//src = (open[1] + close[1] + high[1] + low[1]) / 4
-src := ohlc4
 
 var float start_long_trade = 0.
 var float long_trades = 0.
@@ -204,26 +210,27 @@ var int long_trade_count = 0
 var int short_trade_count = 0
 
 if startLongTrade
-    start_long_trade := src
+    start_long_trade := ubase
     start_long_trade
 
 if endLongTrade
     long_trade_count := 1
-    diff_long = src - start_long_trade
+    diff_long = ubase - start_long_trade
     wins_long := diff_long > 0 ? 1 : 0
     long_trades := diff_long * lot_size
     long_trades
     
 if startShortTrade
-    start_short_trade := src
+    start_short_trade := ubase
     start_short_trade
 
 if endShortTrade
     short_trade_count := 1
-    diff_short = start_short_trade - src
+    diff_short = start_short_trade - ubase
     wins_short := diff_short > 0 ? 1 : 0
     short_trades := diff_short * lot_size
     short_trades
+
 
 cumreturn_long = ta.cum(long_trades)  //-- cumulative return long
 cumreturn_short = ta.cum(short_trades)  //-- cumulative return short
@@ -239,18 +246,24 @@ total_losses_short = total_short_trades - total_wins_short == 0 ? 1 : total_shor
 
 show_info = input(true, 'Show Info?')
 
-tbase = (time - time[1]) / 1000
-tcurr = (timenow - time_close[1]) / 1000
-
 var label lbl = na
 
-info = '\nK Value: ' + str.tostring(K, '#') + ' (' + str.tostring(k, '#.##') + ')' + '\nHPeriod: ' + str.tostring(holding_p, '#')
-       +'\nCR Long='+str.tostring(cumreturn_long,'#.#') + '\nTrades long: ' + str.tostring(total_long_trades,'#')+'\nWin/Loss: '+ str.tostring(total_wins_long/total_losses_long,'#.##')+'\nWinrate Long: '+str.tostring(total_wins_long/total_long_trades,'#.#%')
-       +'\nCR Short='+str.tostring(cumreturn_short,'#.#') + '\nTrades Short: ' + str.tostring(total_short_trades,'#')+'\nWin/Loss: '+ str.tostring(total_wins_short/total_losses_short,'#.##')+'\nWinrate Short: '+str.tostring(total_wins_short/total_short_trades,'#.#%') 
-       + '\n\nBar Time: ' + str.tostring(tcurr / tbase, '#.#%')
+info =  '\n  K Value: ' + str.tostring(K, '#') + ' (' + str.tostring(k, '#.##') + ')'
+       +'\n  HPeriod: ' + str.tostring(holding_p, '#')
+     +'\n\n  CR Long: '+str.tostring(cumreturn_long,'#.#')       
+       +'\n  Trades long: ' + str.tostring(total_long_trades,'#')
+       +'\n  Win/Loss: '+ str.tostring(total_wins_long/total_losses_long,'#.##')
+       +'\n  Winrate Long: '+str.tostring(total_wins_long/total_long_trades,'#.#%')
+     +'\n\n  CR Short: '+str.tostring(cumreturn_short,'#.#')
+       +'\n  Trades Short: ' + str.tostring(total_short_trades,'#')
+       +'\n  Win/Loss: '+ str.tostring(total_wins_short/total_losses_short,'#.##')
+       +'\n  Winrate Short: '+str.tostring(total_wins_short/total_short_trades,'#.#%') 
+     +'\n\n  Bar Time: ' + str.tostring(tcurr / tbase, '#.#%')
+
 
 if show_info and barstate.islast 
-    lbl := label.new(bar_index, src, info, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_left, color.white, size.small, text.align_left)
+    lbl := label.new(bar_index, ubase, info, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_left, color.white, size.small, text.align_left)
     label.delete(lbl[1])
+
 
 
