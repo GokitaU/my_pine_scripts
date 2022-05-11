@@ -52,14 +52,14 @@ indicator('Machine Learning: Logistic Regression v5', '', true, max_bars_back = 
 
 //-------------------- Inputs
 
+
 ptype = input.string('Close', 'Price Type', options=['Open', 'High', 'Low', 'Close', 'HL2', 'OC2', 'OHL3', 'HLC3', 'OHLC4'])
-src = ptype
 
 reso = input.timeframe('', 'Resolution')
 lookback = input.int(2, 'Lookback Window Size |2..n| (2)', minval=2)
 nlbk = input.int(2, 'Normalization Lookback |2..240| (120)', minval=2, maxval=240)
-lrate = input.float(0.001, 'Learning Rate |0.0001..0.01|', minval=0.0001, maxval=0.01, step=0.0001)
-iterations = input.int(1000, 'Training Iterations |50..20000|', minval=50)
+lrate = input.float(0.004, 'Learning Rate |0.0001..0.01|', minval=0.0001, maxval=0.01, step=0.0001)
+iterations = input.int(500, 'Training Iterations |50..20000|', minval=50)
 ftype = input.string('Both', 'Filter Signals by', options=['Volatility', 'Volume', 'Both', 'None'])
 curves = input(true, 'Show Loss & Prediction Curves?')
 easteregg = input(false, 'Optional Calculation?')
@@ -117,6 +117,9 @@ minimax(ds, p, min, max) =>  // normalize to price
 
 ds = ptype == 'Open' ? open : ptype == 'High' ? high : ptype == 'Low' ? low : ptype == 'Close' ? close : ptype == 'HL2' ? (high + low) / 2 : ptype == 'OC2' ? (open + close) / 2 : ptype == 'OHL3' ? (open + high + low) / 3 : ptype == 'HLC3' ? (high + low + close) / 3 : (open + high + low + close) / 4
 
+src = ds
+
+
 base_ds = request.security('', reso, ds[barstate.ishistory ? 0 : 1], gaps=barmerge.gaps_on, lookahead=barmerge.lookahead_off )
 synth_ds = math.log(math.abs(math.pow(base_ds, 2) - 1) + .5)  //-- generate a synthetic dataset
 
@@ -157,10 +160,10 @@ alertcondition(endShortTrade, title="Alert: Exit Sell", message="ML-LR: Exit Sel
 
 //------------------ Rendering
 
-plotshape(dtta and startLongTrade ? src : na, 'Buy', shape.triangleup, location.belowbar, color.new(color.lime, 0), size=size.tiny)
-plotshape(dtta and startShortTrade ? src : na, 'Sell', shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.tiny)
-plotshape(dtta and endLongTrade ? src : na, 'StopBuy',  shape.flag, location.top, color.new(color.lime, 0), size=size.tiny)
-plotshape(dtta and endShortTrade ? src : na, 'StopSell', shape.flag, location.bottom, color.new(color.red, 0), size=size.tiny)
+plotshape(startLongTrade ? src : na, 'Buy', shape.triangleup, location.belowbar, color.new(color.lime, 0), size=size.tiny)
+plotshape(startShortTrade ? src : na, 'Sell', shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.tiny)
+plotshape(endLongTrade ? src : na, 'StopBuy',  shape.flag, location.top, color.new(color.lime, 0), size=size.tiny)
+plotshape(endShortTrade ? src : na, 'StopSell', shape.flag, location.bottom, color.new(color.red, 0), size=size.tiny)
 
 
 //-------------------- Backtesting
@@ -168,7 +171,7 @@ plotshape(dtta and endShortTrade ? src : na, 'StopSell', shape.flag, location.bo
 lot_size = input.float(1, 'Lot Size', options=[0.01, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 1000])
 
 //src = (open[1] + close[1] + high[1] + low[1]) / 4
-//src := ohlc4
+src := ohlc4
 
 var float start_long_trade = 0.
 var float long_trades = 0.
