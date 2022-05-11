@@ -1,0 +1,211 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5
+indicator('Five-in-one-Strategy', '', true, max_bars_back = 5000, max_lines_count=400, max_labels_count=400)
+
+// Description:
+
+// This is a five-in-one strategy using:
+//     Dual Thrust Trading Algorithm © capissimo
+
+// Anyone of the indicators can be switched off.
+
+//-------------------- Inputs
+
+ftype = input.string('Both', 'Filter Signals by', options=['Volatility', 'Volume', 'Both', 'None'])
+
+dtta = input(true, '===Dual Thrust Trading Algo===')
+ds = input(close, 'Dataset')
+src = ds
+algo = input.int(2, 'Use DTTA algorithm #:', options=[1, 2])
+mlen = input.int(4, 'DTTA Lag M', minval=1)
+nlen = input.int(20, 'DTTA Lag N', minval=1)
+k = input.float(0.5, 'DTTA Coeff', minval=0.01, step=0.01)  // .7, .9
+disc = input.float(0.5, 'DTTA Coeff Trending Discount', minval=0.01, step=0.01)  // . 5, .6
+holding_p = input.int(10, 'Holding Period |1..n|', minval=1)
+
+//-------------------- System Variables
+
+var BUY = 1
+var SELL = -1
+var HOLD = 0
+
+var signal = HOLD
+var hp_counter = 0
+//-------------------- Dynamic Arrays
+
+
+
+//-------------------- Custom Functions
+
+volumeBreak(thres) =>
+    rsivol = ta.rsi(volume, 14)
+    osc = ta.hma(rsivol, 10)
+    osc > thres
+
+volatilityBreak(volmin, volmax) =>
+    ta.atr(volmin) > ta.atr(volmax)
+
+dtta1_algo(k1, k2, len) =>
+    hh = ta.highest(high, len)[1]
+    hc = ta.highest(ds, len)[1]
+    lc = ta.lowest(ds, len)[1]
+    ll = ta.lowest(low, len)[1]
+
+    // The range is calculated based on the close, high and low over the most recent N-periods.  
+    // Trade is made when the market moves a certain range from the opening price. 
+    range_1 = math.max(hh - lc, hc - ll)
+    [open + k1 * range_1, open - k2 * range_1]
+
+dtta2_algo(k1, k2, ml, nl) =>
+    hh = 0.0
+    ll = 0.0
+    hc = 0.0
+    lc = 0.0
+
+    hh := ta.highest(high, ml)[1]
+    hc := ta.highest(ds, ml)[1]
+    lc := ta.lowest(ds, ml)[1]
+    ll := ta.lowest(low, ml)[1]
+
+    sellRange = hh - lc >= hc - ll ? hh - lc : hc - ll
+
+    hh := ta.highest(high, nl)[1]
+    hc := ta.highest(ds, nl)[1]
+    lc := ta.lowest(ds, nl)[1]
+    ll := ta.lowest(low, nl)[1]
+
+    buyRange = hh - lc >= hc - ll ? hh - lc : hc - ll
+    [open + k1 * buyRange, open - k2 * sellRange]
+
+//-------------------- Logic
+
+tbase = (time - time[1]) / 1000
+tcurr = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+filter = ftype == 'Volatility' ? volatilityBreak(1, 10) : ftype == 'Volume' ? volumeBreak(49) : ftype == 'Both' ? volatilityBreak(1, 10) and volumeBreak(49) : true
+
+// Bullish/Bearish Identification
+rng = close - open
+doji = rng == 0
+uptrend = rng > 0 or doji and rng[1] > 0
+dntrend = rng < 0 or doji and rng[1] < 0
+
+k1 = k
+k2 = k
+if uptrend  // Assigned empirically. To be optimized separately
+    k1 *= disc  //.2
+    k2 *= (1 + disc)
+    k2
+if dntrend
+    k1 *= (1 + disc)
+    k2 *= disc  //.2
+    k2
+
+[bt1, st1] = dtta1_algo(k1, k2, mlen)
+[bt2, st2] = dtta2_algo(k1, k2, mlen, nlen)
+
+buyTrigger = 0.0
+sellTrigger = 0.0
+if algo == 1
+    buyTrigger := bt1
+    sellTrigger := st1
+    sellTrigger
+else
+    buyTrigger := bt2
+    sellTrigger := st2
+    sellTrigger
+
+signal := ds >= buyTrigger and uptrend and filter ? BUY : ds <= sellTrigger and dntrend and filter ? SELL : nz(signal[1])
+
+changed = ta.change(signal)
+
+hp_counter := changed ? 0 : hp_counter + 1
+
+//startLongTrade = ta.change(signal) and signal == BUY 
+//startShortTrade = ta.change(signal) and signal == SELL
+//endLongTrade = ta.change(signal) and signal == SELL
+//endShortTrade = ta.change(signal) and signal == BUY
+
+startLongTrade = changed and signal == BUY
+startShortTrade = changed and signal == SELL
+endLongTrade = signal == BUY and hp_counter == holding_p and not changed or changed and signal == SELL
+endShortTrade = signal == SELL and hp_counter == holding_p and not changed or changed and signal == BUY
+
+
+//------------------ Rendering
+
+plotshape(dtta and startLongTrade ? src : na, 'Buy', shape.triangleup, location.belowbar, color.new(color.lime, 0), size=size.tiny)
+plotshape(dtta and startShortTrade ? src : na, 'Sell', shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.tiny)
+plotshape(dtta and endLongTrade ? src : na, 'StopBuy',  shape.flag, location.top, color.new(color.lime, 0), size=size.tiny)
+plotshape(dtta and endShortTrade ? src : na, 'StopSell', shape.flag, location.bottom, color.new(color.red, 0), size=size.tiny)
+
+
+//-------------------- Backtesting
+
+show_info = input(true, '===Information for DTTA only===')
+lot_size = input.float(1, 'Lot Size', options=[0.01, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 1000])
+
+//src = (open[1] + close[1] + high[1] + low[1]) / 4
+//src := ohlc4
+
+var float start_long_trade = 0.
+var float long_trades = 0.
+var float start_short_trade = 0.
+var float short_trades = 0.
+var int wins_long = 0
+var int wins_short = 0
+var int long_trade_count = 0
+var int short_trade_count = 0
+
+if startLongTrade
+    start_long_trade := src
+    start_long_trade
+
+if endLongTrade
+    long_trade_count := 1
+    diff_long = src - start_long_trade
+    wins_long := diff_long > 0 ? 1 : 0
+    long_trades := diff_long * lot_size
+    long_trades
+    
+if startShortTrade
+    start_short_trade := src
+    start_short_trade
+
+if endShortTrade
+    short_trade_count := 1
+    diff_short = start_short_trade - src
+    wins_short := diff_short > 0 ? 1 : 0
+    short_trades := diff_short * lot_size
+    short_trades
+
+cumreturn_long = ta.cum(long_trades)  //-- cumulative return long
+cumreturn_short = ta.cum(short_trades)  //-- cumulative return short
+total_long_trades = ta.cum(long_trade_count)
+total_short_trades = ta.cum(short_trade_count)
+total_wins_long = ta.cum(wins_long)
+total_wins_short = ta.cum(wins_short)
+total_losses_long = total_long_trades - total_wins_long == 0 ? 1 : total_long_trades - total_wins_long
+total_losses_short = total_short_trades - total_wins_short == 0 ? 1 : total_short_trades - total_wins_short
+
+
+//-------------------- Information
+
+//show_info = input(true, 'Show Info?')
+
+//tbase = (time - time[1]) / 1000
+//tcurr = (timenow - time_close[1]) / 1000
+
+var label lbl = na
+
+info = '\nCR Long='+str.tostring(cumreturn_long,'#.#') + '\nTrades long: ' + str.tostring(total_long_trades,'#')+'\nWin/Loss: '+ str.tostring(total_wins_long/total_losses_long,'#.##')+'\nWinrate Long: '+str.tostring(total_wins_long/total_long_trades,'#.#%')
+       +'\nCR Short='+str.tostring(cumreturn_short,'#.#') + '\nTrades Short: ' + str.tostring(total_short_trades,'#')+'\nWin/Loss: '+ str.tostring(total_wins_short/total_losses_short,'#.##')+'\nWinrate Short: '+str.tostring(total_wins_short/total_short_trades,'#.#%') 
+       + '\n\nBar Time: ' + str.tostring(tcurr / tbase, '#.#%')
+
+if show_info and barstate.islast 
+    lbl := label.new(bar_index, src, info, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_left, color.white, size.small, text.align_left)
+    label.delete(lbl[1])
+
