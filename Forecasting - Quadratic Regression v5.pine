@@ -48,9 +48,12 @@ seasonal_naive(x, p) =>
 
 //-------------------- Logic
 
-base = ptype == 'Open' ? open : ptype == 'High' ? high : ptype == 'Low' ? low : ptype == 'Close' ? close : ptype == 'HL2' ? (high + low) / 2 : ptype == 'OC2' ? (open + close) / 2 : ptype == 'OHL3' ? (open + high + low) / 3 : ptype == 'HLC3' ? (high + low + close) / 3 : (open + high + low + close) / 4
+src = ptype == 'Open' ? open : ptype == 'High' ? high : ptype == 'Low' ? low : ptype == 'Close' ? close : ptype == 'HL2' ? (high + low) / 2 : ptype == 'OC2' ? (open + close) / 2 : ptype == 'OHL3' ? (open + high + low) / 3 : ptype == 'HLC3' ? (high + low + close) / 3 : (open + high + low + close) / 4
+base = src 
 
-src = base
+basePrice = input(false, 'Use Base Price?')
+
+ubase = basePrice ? (open + close + high + low) / 4 : base
 
 filter = ftype == 'Volatility' ? volatilityBreak(minatr, maxatr) : ftype == 'Volume' ? volumeBreak(vol) : ftype == 'Both' ? volatilityBreak(minatr, maxatr) and volumeBreak(vol) : true
 
@@ -75,18 +78,19 @@ qreg = b1 + b2 * x1 + b3 * x2
 
 forecast = mth == 'Seasonal Naive' ? seasonal_naive(qreg, sp) : mth == 'Simple Mean' ? simple_mean(qreg, sp) : simply_naive(qreg, sp)
 
+//==
 if year(time) >= startYear
     signal := base > qreg and filter ? BUY : base < qreg and filter ? SELL : nz(signal[1])  // HOLD
     signal
-//==
 
 changed = ta.change(signal)
 hp_counter := changed ? 0 : hp_counter + 1
 
 startLongTrade = changed and signal == BUY
 startShortTrade = changed and signal == SELL
-endLongTrade = signal == BUY and hp_counter == holding_p and not changed or changed and signal == SELL
-endShortTrade = signal == SELL and hp_counter == holding_p and not changed or changed and signal == BUY
+
+endLongTrade = changed and signal == SELL or signal == BUY and hp_counter == holding_p and not changed
+endShortTrade = changed and signal == BUY or signal == SELL and hp_counter == holding_p and not changed
 
 clr = qreg > forecast ? color.red : qreg < forecast ? color.green : color.blue
 
@@ -111,26 +115,20 @@ plotshape(endShortTrade ? src : na, 'StopSell', shape.flag, location.bottom, col
 //-------------------- Notification
 
 if changed and signal == BUY
-    alert('Buy Alert', alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+    alert('Buy Alert',  alert.freq_once_per_bar_close)  // alert.freq_once_per_bar_close
 if changed and signal == SELL
-    alert('Sell Alert', alert.freq_once_per_bar)
+    alert('Sell Alert',  alert.freq_once_per_bar_close)
 
 alertcondition(startLongTrade, 'Buy Alert', 'Go Long!')
 alertcondition(startShortTrade, 'Sell Alert', 'Go Short!')
 
 //-------------------- Backtest
-
 show_info = input(true, 'Performance')
 lot_size = input.float(1, 'Lot Size', options=[0.01, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 1000])
-ubase = input(false, 'Use Base Price?')
 
 tbase = (time - time[1]) / 1000
 tcurr = (timenow - time_close[1]) / 1000
 barlife = tcurr / tbase
-
-//bidask = ubase ? (open + high + low) / 3 : close
-bidask = ubase ? (open + close + high + low) / 4 : close
-
 
 var float start_long_trade = 0.
 var float long_trades = 0.
@@ -143,23 +141,23 @@ var int short_trade_count = 0
 
 
 if startLongTrade
-    start_long_trade := bidask
+    start_long_trade := src
     start_long_trade
 
 if endLongTrade
     long_trade_count := 1
-    diff_long = bidask - start_long_trade
+    diff_long = src - start_long_trade
     wins_long := diff_long > 0 ? 1 : 0
     long_trades := diff_long * lot_size
     long_trades
     
 if startShortTrade
-    start_short_trade := bidask
+    start_short_trade := src
     start_short_trade
 
 if endShortTrade
     short_trade_count := 1
-    diff_short = start_short_trade - bidask
+    diff_short = start_short_trade - src
     wins_short := diff_short > 0 ? 1 : 0
     short_trades := diff_short * lot_size
     short_trades
@@ -176,7 +174,6 @@ total_losses_short = total_short_trades - total_wins_short == 0 ? 1 : total_shor
 
 
 //------------------- Information
-
 var label lbl = na
 
 info = '\n\n  CR Long: '+str.tostring(cumreturn_long,'#.#') 
@@ -190,6 +187,6 @@ info = '\n\n  CR Long: '+str.tostring(cumreturn_long,'#.#')
        +'\n\n  Bar Time: ' + str.tostring(tcurr / tbase, '#.#%')
 
 if show_info and barstate.islast 
-    lbl := label.new(bar_index, bidask, info, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_left, color.white, size.small, text.align_left)
+    lbl := label.new(bar_index, ubase, info, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_left, color.white, size.small, text.align_left)
     label.delete(lbl[1])
 
